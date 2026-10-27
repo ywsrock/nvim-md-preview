@@ -88,6 +88,8 @@ Markdown ファイルを開いて `:MarkdownPreview` を実行します。
 | `p` | プレゼンモード（矢印キーで移動、`f` で全画面、Esc で終了） |
 | 段落をクリック | Neovim のその行へ移動 |
 
+ツールバーのボタンでも同じ操作ができます。これらのキーがブラウザの拡張機能とぶつかる場合は `browser_keys = false` にしてください（[FAQ](#faq) を参照）。
+
 ## 設定
 
 既定値を示します。変えたいものだけ渡してください。
@@ -103,6 +105,7 @@ require("md_preview").setup({
   theme = "auto",         -- "auto"（OS の設定に従う）| "dark" | "light"
   custom_css = "",        -- 組み込みスタイルの後に読み込む CSS ファイル
   wiki_links = true,      -- [[Page]] をリンクにする
+  browser_keys = true,    -- プレビュー画面のキーボードショートカット（t, /, Ctrl+F, p）。Vim 系拡張とぶつかる場合は false
   git_diff = false,       -- HEAD からの変更に印を付ける（:MdPreviewDiff で切り替え）
 
   export = {
@@ -139,6 +142,34 @@ Vimscript では `g:md_preview_port` と `g:md_preview_auto_open` も使えま�
 ### タブレットや別の PC から見る
 
 `host = "0.0.0.0"` にします。プレビューを開始するたびにランダムなトークンが作られ、LAN の URL が Neovim に表示されます。その URL を開いたブラウザだけがアクセスできます。
+
+## FAQ
+
+### プレビュー画面でショートカットキーが効かない、または新しいタブが開いてしまう
+
+Vimium、Vimium C、Tridactyl、Surfingkeys など、ブラウザに Vim 風のキー操作を追加する拡張機能は、プレビュー画面と同じキーを使っています。
+
+| キー | プレビュー | Vim 系の拡張機能 |
+|---|---|---|
+| `t` | 目次 | 新しいタブを開く（Vimium、Tridactyl） |
+| `/` | 検索 | ページ内検索（Vimium）、クイック検索（Firefox） |
+| `p` | プレゼンモード | クリップボードの URL を開く（Vimium、Tridactyl） |
+| `f`（スライド中） | 全画面 | リンクヒント |
+
+通常は拡張機能が先にキーを受け取るため、プレビュー画面にはキーが届きません。次のどちらかで対処できます。
+
+- **プレビュー画面のショートカットを無効にする**（ツールバーのボタンで操作します）：
+
+  ```lua
+  require("md_preview").setup({ browser_keys = false })
+  ```
+
+- **プレビュー画面でだけ拡張機能を無効にする**（プレビュー画面のキーが使えるようになります）：
+  - Vimium / Vimium C：オプションの除外 URL のルールに `http://127.0.0.1:*/*` を追加します。拡張機能は使いつつ一部のキーだけ通したい場合は、「Keys」に `t / p` のように指定します。
+  - Tridactyl：`:blacklistadd 127.0.0.1` を実行します。
+  - Surfingkeys：設定に `settings.blocklistPattern = /127\.0\.0\.1/;` を追加します。
+
+  `port` を変えている場合や LAN モードの場合は、アドレスを読み替えてください。
 
 ## 仕組み
 

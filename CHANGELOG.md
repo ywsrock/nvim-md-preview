@@ -2,7 +2,12 @@
 
 All notable changes are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
-## [0.2.0] - Unreleased
+## [Unreleased]
+
+### Added
+- `browser_keys` option to turn off the preview page's keyboard shortcuts (`t`, `/`, Ctrl+F, `p`), which clash with Vim-style browser extensions such as Vimium and Tridactyl. README FAQ explains the clash and how to exclude the preview in each extension.
+
+## [0.2.0] - 2026-10-28
 
 ### Security
 - Fixed arbitrary local file reads: `/assets` accepted absolute paths, and the permissive CORS policy let any website read the response while a preview was running. Requests are now limited to files inside the document directory, CORS is removed, and the Host and Origin headers are checked.
