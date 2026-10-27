@@ -1,41 +1,32 @@
+<div align="center">
+
 # nvim-md-preview
 
-Neovim 用の Markdown ライブプレビューです。Rust 製のバイナリ 1 つで動き、完全にオフラインで使えます。Node.js や Deno は不要です。
+**カーソルに追従し、クリックで戻れる Markdown プレビュー。**<br>
+Rust 製の小さなバイナリ 1 つ。Node.js も Deno も不要で、オフラインで動きます。
+
+[![CI](https://github.com/ywsrock/nvim-md-preview/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ywsrock/nvim-md-preview/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/ywsrock/nvim-md-preview)](https://github.com/ywsrock/nvim-md-preview/releases/latest)
+[![Neovim](https://img.shields.io/badge/Neovim-0.9%2B-57A143?logo=neovim&logoColor=white)](https://neovim.io)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 [English](README.md)
 
-![デモ](docs/demo.gif)
+![Neovim で入力するとプレビューが更新され、カーソルを動かすとスクロールし、プレビューをクリックするとカーソルが移動し、:MdPreviewDiff で変更が表示される](docs/hero.gif)
 
-- **正確な双方向同期**：カーソルのあるブロックにプレビューが追従します。プレビューの段落をクリックすると、Neovim のその行に移動します。
-- **長い文書でも軽い**：変わったブロックだけを描き直すので、入力中も図やスクロール位置が保たれます。
-- **オフラインで動く**：Mermaid、KaTeX、highlight.js、フォントをバイナリに内蔵しています。
-- **エクスポート内蔵**：PDF（Typst）、DOCX / HTML / EPUB（pandoc）、Markdown。ブラウザからでも `:MdPreviewExport` からでも出力でき、未保存の編集も含まれます。
-- **長文向けの機能**：目次、ページ内検索、脚注のポップアップ、プレゼンモード、印刷プレビュー。
-- **安全な既定値**：`127.0.0.1` でのみ待ち受け、他のサイトからのリクエストを拒否します。LAN で共有する場合はセッションごとのトークンが必要です。
+</div>
 
-## 機能
+## nvim-md-preview を選ぶ理由
 
-| | |
-|---|---|
-| 描画 | GFM の表・タスクリスト・脚注・取り消し線、Mermaid、KaTeX 数式（`$...$`, `$$...$$`）、シンタックスハイライト（190 言語）、絵文字 `:smile:`、YAML front matter |
-| Callout | GitHub Alerts（`> [!NOTE]`）と Obsidian の callout（`> [!info] タイトル`、折りたたみ `> [!todo]-`） |
-| リンク | Wiki リンク `[[Page]]` / `[[Page\|表示名]]`。ローカルの `.md` リンクと Wiki リンクは Neovim で開く |
-| 同期 | ブロック単位のスクロール同期、クリックで該当行へ移動、切り替えた Markdown バッファに追従 |
-| ナビゲーション | 目次パネル（`t`）、検索（`/` か Ctrl+F）、見出しアンカー |
-| モード | プレゼンモード（`p`、`---` でスライドを区切る）、A4 の改ページ目安つき印刷プレビュー |
-| Git | `:MdPreviewDiff` で `HEAD`・ステージ済み・任意のブランチとの差分を表示。単語単位の差分、削除された内容・変更前の内容、変更の件数、前後への移動、スクロールバーの印 |
-| エクスポート | PDF / DOCX / HTML / EPUB / Markdown。用紙サイズ、余白、フォント、目次、見出し番号、Typst テンプレートを指定可能 |
-| 見た目 | ダーク / ライト / 自動のテーマ、カスタム CSS |
-| 対応環境 | Linux（x86_64, arm64）、macOS（Intel, Apple Silicon）、Windows、WSL |
+- **カーソルがプレビューを動かし、プレビューがカーソルを動かす。** カーソルを動かすとプレビューがブロック単位で追従し、プレビューの段落をクリックすると Neovim のその行にカーソルが移ります。
+- **入れるのはバイナリ 1 つだけ。** 約 2.5 MB の Rust 製で、Mermaid・KaTeX・highlight.js・フォントを内蔵しています。Node.js も Deno も不要で、インストール後はネットワークも要りません。
+- **プレビューだけでは終わらない。** PDF・DOCX・HTML・EPUB への出力、Git との差分の確認、スライドとしての発表まで、同じ画面でできます。
 
-## 動作環境
+Neovim 0.9 以降が必要です。Vim には対応していません。
 
-- Neovim 0.9 以降
-- バイナリのダウンロードに `curl`（または `wget` / PowerShell）。pandoc と Typst の展開に使う `tar` は、macOS・Linux・Windows 10 以降に標準で入っています。
+## クイックスタート
 
-## インストール
-
-### lazy.nvim
+[lazy.nvim](https://github.com/folke/lazy.nvim) の場合：
 
 ```lua
 {
@@ -48,51 +39,180 @@ Neovim 用の Markdown ライブプレビューです。Rust 製のバイナリ 
 }
 ```
 
-### vim-plug
+Markdown ファイルを開いて `:MarkdownPreview` を実行するだけです。
+
+<details>
+<summary>vim-plug、packer.nvim</summary>
 
 ```vim
+" vim-plug: インストール後に一度 :MdPreviewInstall を実行
 Plug 'ywsrock/nvim-md-preview'
 ```
 
-インストール後に一度 `:MdPreviewInstall` を実行してください。
-
-### packer.nvim
-
 ```lua
+-- packer.nvim
 use { "ywsrock/nvim-md-preview", run = ":MdPreviewInstall" }
 ```
 
-`:MdPreviewInstall` は、プレビュー用のバイナリと pandoc・Typst を並列でダウンロードし、進捗をコマンドラインに表示します。実行しなかった場合は、初めて `:MarkdownPreview` を実行したときにバイナリをダウンロードします。
+</details>
 
-うまく動かないときは `:checkhealth md_preview` を実行してください。
+`:MdPreviewInstall` は、バイナリと、エクスポート用の pandoc・Typst を並列でダウンロードし、進捗をコマンドラインに表示します。うまく動かないときは `:checkhealth md_preview` を実行してください。
+
+## 他のプラグインとの比較
+
+| | **nvim-md-preview** | [markdown-preview.nvim](https://github.com/iamcco/markdown-preview.nvim) | [peek.nvim](https://github.com/toppair/peek.nvim) |
+|---|---|---|---|
+| 実行環境 | Rust のバイナリ 1 つ | Node.js アプリ（ビルド済みのものか yarn でビルド） | Deno |
+| Vim で使える | いいえ | はい | いいえ |
+| カーソルにプレビューが追従 | ブロック単位 | はい | はい |
+| プレビューのクリックで Neovim の該当行へ | **はい** | いいえ | いいえ |
+| PDF / DOCX / HTML / EPUB への出力 | **内蔵** | ブラウザの印刷 | いいえ |
+| 文書の Git 差分表示 | **はい** | いいえ | いいえ |
+| 同じファイルでスライド | **はい** | いいえ | いいえ |
+
+[render-markdown.nvim](https://github.com/MeanderingProgrammer/render-markdown.nvim) や [markview.nvim](https://github.com/OXY2DEV/markview.nvim) のようにバッファ内で描画するプラグインは、目的が違います。編集中はそちら、実際のページや図・数式を見たいときや出力したいときは nvim-md-preview、と併用できます。
+
+この表は 2026 年 10 月時点の理解に基づいています。誤りがあれば [Issue](https://github.com/ywsrock/nvim-md-preview/issues) で教えてください。
+
+## 主な機能
+
+### 双方向の同期
+
+スクロールの比率から推測するのではなく、元の行番号の印を使って、カーソルのあるブロックを表示し続けます。プレビューの段落をクリックすると Neovim がその行に移動します。ローカルの `.md` リンクや `[[Wiki リンク]]` も Neovim で開きます。
+
+### オフラインで何でも描画
+
+![Mermaid・数式・コード・callout を含むプレビュー](docs/demo.gif)
+
+GitHub 形式の Markdown、Mermaid の図、KaTeX の数式、190 言語のシンタックスハイライト、GitHub Alerts と Obsidian の callout、ホバーで出る脚注、絵文字、front matter、目次、ページ内検索に対応しています。
+
+### 何が変わったかを見る
+
+![単語単位の差分、削除された段落、変更箇所への移動](docs/diff.png)
+
+`:MdPreviewDiff` で、バッファの内容（未保存の編集を含む）を `HEAD`・ステージ済みの内容・任意のブランチと比較します。変わった語は下線や取り消し線でその場に表示され、削除された段落は折りたたんで残り、変更箇所を順に移動できます。
+
+### 出力と発表
+
+`:MdPreviewExport pdf` で、Typst を使ってファイルの隣に PDF を書き出します。用紙サイズ・余白・フォント・目次・独自のテンプレートを指定できます。DOCX・HTML・EPUB は pandoc で出力します。プレビューで `p` を押すと、`---` で区切ったスライドとして発表できます。
+
+## レシピ
+
+<details open>
+<summary><b>キーの割り当て</b></summary>
+
+```lua
+{
+  "ywsrock/nvim-md-preview",
+  ft = "markdown",
+  build = ":MdPreviewInstall",
+  config = function() require("md_preview").setup({}) end,
+  keys = {
+    { "<leader>mp", "<cmd>MarkdownPreviewToggle<cr>", ft = "markdown", desc = "Markdown: プレビュー" },
+    { "<leader>md", "<cmd>MdPreviewDiff<cr>", ft = "markdown", desc = "Markdown: Git の差分" },
+    {
+      "<leader>me",
+      function()
+        vim.ui.select({ "pdf", "docx", "html", "epub" }, { prompt = "出力形式" }, function(format)
+          if format then vim.cmd("MdPreviewExport " .. format) end
+        end)
+      end,
+      ft = "markdown",
+      desc = "Markdown: エクスポート",
+    },
+  },
+}
+```
+
+</details>
+
+<details>
+<summary><b>プレビューを自動で開始する</b></summary>
+
+最初に開いた Markdown ファイルで開始します。`follow_buffer`（既定で有効）により、その後は今いる Markdown バッファにプレビューが切り替わります。
+
+```lua
+vim.api.nvim_create_autocmd("FileType", {
+  pattern = "markdown",
+  once = true,
+  command = "MarkdownPreview",
+})
+```
+
+</details>
+
+<details>
+<summary><b>Obsidian の Vault でメモを書く</b></summary>
+
+`[[Page]]` / `[[Page|表示名]]` のリンクと Obsidian の callout（`> [!info] タイトル`、折りたたみの `> [!todo]-`）は設定なしで使えます。Wiki リンクをクリックすると、大文字小文字・空白・`-`・`_` の違いを無視してノートを探し、Neovim で開きます。見た目は `custom_css = "~/notes/preview.css"` で変えられます。
+
+</details>
+
+<details>
+<summary><b>PR のドキュメントをレビューする</b></summary>
+
+ブランチをチェックアウトして `:MdPreviewDiff main` を実行します。`main` から変わった段落すべてに印が付き、プレビューのヘッダーの ↑ / ↓ で順に確認できます。`:MdPreviewDiff staged` でコミット予定の内容、`:MdPreviewDiff off` で表示を消します。
+
+</details>
+
+<details>
+<summary><b>会社の書式で PDF を渡す</b></summary>
+
+```lua
+require("md_preview").setup({
+  export = { paper = "a4", toc = true, numbering = true, template = "~/.config/nvim/report.typ" },
+})
+```
+
+```typst
+// ~/.config/nvim/report.typ
+#let template(doc) = {
+  set page(header: align(right)[社外秘])
+  set text(font: "Noto Sans CJK JP", size: 10pt)
+  doc
+}
+```
+
+あとは `:MdPreviewExport pdf` です。相対パスの画像は文書のフォルダから探します。
+
+</details>
+
+<details>
+<summary><b>タブレットで一緒に見る</b></summary>
+
+`host = "0.0.0.0"` にします。プレビューを開始するたびに、使い捨てのトークン付きの LAN の URL が Neovim に表示されます。タブレットでそれを開くと、PC のブラウザと同じようにカーソルに追従します。
+
+</details>
 
 ## 使い方
-
-Markdown ファイルを開いて `:MarkdownPreview` を実行します。
 
 | コマンド | |
 |---|---|
 | `:MarkdownPreview` / `:MdPreview` | プレビューを開始 |
 | `:MarkdownPreviewStop` / `:MdPreviewStop` | 停止 |
 | `:MarkdownPreviewToggle` | 開始 / 停止を切り替え |
-| `:MdPreviewExport {形式} [path]` | 現在のバッファを出力：`pdf` `docx` `html` `epub` `markdown`。`path` を省略するとファイルと同じ場所に保存 |
-| `:MdPreviewDiff [基準]` | Git の差分を表示 / 非表示。`基準`（`HEAD`、`staged`、ブランチ・タグ・コミット）を指定するとそれと比較。`off` で非表示 |
+| `:MdPreviewExport {形式} [path]` | バッファを出力：`pdf` `docx` `html` `epub` `markdown`。`path` を省略するとファイルの隣に保存 |
+| `:MdPreviewDiff [基準]` | Git の差分の表示を切り替え。`基準`（`HEAD`、`staged`、ブランチ・タグ・コミット）を指定するとそれと比較。`off` で非表示 |
 | `:MdPreviewInstall` | バイナリ・pandoc・Typst をダウンロード / 更新 |
 
-ブラウザでの操作：
+プレビューでは、`t` で目次、`/` か Ctrl+F で検索、`p` でスライド、クリックで該当行へ移動します。ツールバーのボタンでも同じ操作ができます。これらのキーが Vimium などのブラウザ拡張とぶつかる場合は `browser_keys = false` にしてください（[FAQ](#faq) を参照）。
 
-| キー | |
-|---|---|
-| `t` | 目次の開閉 |
-| `/`、Ctrl+F | 検索（Enter / Shift+Enter で移動、Esc で閉じる） |
-| `p` | プレゼンモード（矢印キーで移動、`f` で全画面、Esc で終了） |
-| 段落をクリック | Neovim のその行へ移動 |
-
-ツールバーのボタンでも同じ操作ができます。これらのキーがブラウザの拡張機能とぶつかる場合は `browser_keys = false` にしてください（[FAQ](#faq) を参照）。
+詳しくは `:help md_preview` を見てください。
 
 ## 設定
 
-既定値を示します。変えたいものだけ渡してください。
+設定はすべて省略できます。よく使うもの：
+
+```lua
+require("md_preview").setup({
+  theme = "auto",        -- "auto" は OS の設定に従う。"dark" / "light" も可
+  auto_open = true,      -- 開始時にブラウザを開く
+  export = { paper = "a4" },
+})
+```
+
+<details>
+<summary>すべての設定と既定値</summary>
 
 ```lua
 require("md_preview").setup({
@@ -121,41 +241,29 @@ require("md_preview").setup({
     font_size = 11,
     toc       = false,      -- 目次（PDF と pandoc の形式）
     numbering = false,      -- 見出し番号
-    template  = "",         -- `template` を export した Typst ファイル（下記）
+    template  = "",         -- `template` を export した Typst ファイル（レシピを参照）
   },
 })
 ```
 
 Vimscript では `g:md_preview_port` と `g:md_preview_auto_open` も使えます。
 
-### Git の差分表示
+</details>
 
-![Git の差分表示](docs/diff.png)
+## markdown-preview.nvim から乗り換える
 
-`:MdPreviewDiff` で、バッファの内容（未保存の編集を含む）と `HEAD` を比較します。`:MdPreviewDiff main` でブランチと、`:MdPreviewDiff staged` でステージ済みの内容と比較できるので、PR のレビューやコミット前の見直しに使えます。
+コマンドは同じです。`:MarkdownPreview`、`:MarkdownPreviewStop`、`:MarkdownPreviewToggle` はそのまま使えます。プラグインの指定と `build` を置き換え、設定を次のように移してください。
 
-- 変更された段落では、追加した語に下線、削除した語に取り消し線が付きます。日本語のように空白の無い文は 1 文字ずつ比較します。
-- 削除された段落は、元の場所に折りたたんだ「削除された内容」として表示します。コード・表・図・数式のブロックや、ほとんど書き換えた段落は、折りたたんだ「変更前の内容」を表示します。
-- 変わったブロックには左端のバーと記号（`+` 追加、`~` 変更、`−` 削除）が付くので、色が分かりにくくても区別できます。
-- ヘッダーに変更の件数が出て、↑ / ↓ で前後の変更に移動できます。スクロールバーの横の印で、文書のどこが変わったかが分かります。
-- 色はエディタの差分の色に合わせます。プレビューのテーマで読みにくい色の場合は、緑・黄・赤を使います。
-
-### PDF のテンプレート
-
-`export.template` には、`template` 関数を export した Typst ファイルを指定します。文書全体に show ルールとして適用されます。
-
-```typst
-// ~/.config/nvim/md-template.typ
-#let template(doc) = {
-  set page(paper: "a4", header: align(right)[社外秘])
-  set text(font: "Noto Sans CJK JP", size: 10pt)
-  doc
-}
-```
-
-### タブレットや別の PC から見る
-
-`host = "0.0.0.0"` にします。プレビューを開始するたびにランダムなトークンが作られ、LAN の URL が Neovim に表示されます。その URL を開いたブラウザだけがアクセスできます。
+| markdown-preview.nvim | nvim-md-preview |
+|---|---|
+| `build = "cd app && npx --yes yarn install"` | `build = ":MdPreviewInstall"` |
+| `g:mkdp_port` | `port` |
+| `g:mkdp_theme` | `theme` |
+| `g:mkdp_markdown_css` | `custom_css` |
+| `g:mkdp_open_to_the_world = 1` | `host = "0.0.0.0"`（トークンで保護） |
+| `g:mkdp_preview_options.disable_sync_scroll = 1` | `scroll_sync = false` |
+| `g:mkdp_auto_start = 1` | [自動で開始するレシピ](#レシピ) |
+| `g:mkdp_browser` | まだ対応していません。`auto_open = false` にして URL を自分で開いてください |
 
 ## FAQ
 
@@ -185,6 +293,10 @@ Vimium、Vimium C、Tridactyl、Surfingkeys など、ブラウザに Vim 風の�
 
   `port` を変えている場合や LAN モードの場合は、アドレスを読み替えてください。
 
+### 文書がどこかに送られることはありますか？
+
+ありません。サーバーは `127.0.0.1` でのみ待ち受け、必要なものはすべてバイナリに入っています。[セキュリティ](#セキュリティ)を見てください。
+
 ## 仕組み
 
 ```
@@ -201,22 +313,15 @@ Lua 側がバッファの内容（デバウンス済み）とカーソル行を�
 
 v0.1.0 までは、プレビュー中に他のサイトからローカルファイルを読み取れる問題がありました。`:MdPreviewInstall` で更新してください。
 
-## ソースからビルド
+## 開発に参加する
+
+バグ報告・アイデア・プルリクエストを歓迎します。ソースからのビルド、テスト、リリースの流れは [CONTRIBUTING.md](CONTRIBUTING.md) を見てください。
 
 ```bash
 git clone https://github.com/ywsrock/nvim-md-preview
 cd nvim-md-preview
-bash download-libs.sh      # バイナリに埋め込む JS / CSS ライブラリを取得
-cargo build --release
+bash download-libs.sh && cargo build --release
 ```
-
-ビルドしたバイナリを指定します：
-
-```lua
-require("md_preview").setup({ binary = "/path/to/nvim-md-preview/target/release/nvim-md-preview" })
-```
-
-テストや開発の流れは [CONTRIBUTING.md](CONTRIBUTING.md) を見てください。
 
 ## 謝辞
 

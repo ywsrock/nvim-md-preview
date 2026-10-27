@@ -1,41 +1,32 @@
+<div align="center">
+
 # nvim-md-preview
 
-Live Markdown preview for Neovim. A single Rust binary, fully offline, no Node.js or Deno.
+**The Markdown preview that follows your cursor, and lets you click back.**<br>
+One small Rust binary. No Node.js, no Deno, works offline.
+
+[![CI](https://github.com/ywsrock/nvim-md-preview/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ywsrock/nvim-md-preview/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/ywsrock/nvim-md-preview)](https://github.com/ywsrock/nvim-md-preview/releases/latest)
+[![Neovim](https://img.shields.io/badge/Neovim-0.9%2B-57A143?logo=neovim&logoColor=white)](https://neovim.io)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 [日本語](README.ja.md)
 
-![demo](docs/demo.gif)
+![Typing in Neovim updates the preview, moving the cursor scrolls it, clicking the preview moves the cursor, and :MdPreviewDiff shows the changes](docs/hero.gif)
 
-- **Accurate two-way sync**: the preview follows your cursor block by block, and clicking a paragraph in the preview jumps to that line in Neovim.
-- **Fast on large documents**: only changed blocks are re-rendered; diagrams and scroll position are kept while you type.
-- **Works offline**: Mermaid, KaTeX, highlight.js and fonts are embedded in the binary.
-- **Export built in**: PDF (Typst), DOCX / HTML / EPUB (pandoc) and Markdown, from the browser or `:MdPreviewExport`. Unsaved edits are included.
-- **Made for long documents**: table of contents, in-page search, footnote popups, presentation mode and print preview.
-- **Secure by default**: listens on `127.0.0.1` only and rejects cross-site requests. LAN sharing needs a per-session token.
+</div>
 
-## Features
+## Why nvim-md-preview
 
-| | |
-|---|---|
-| Rendering | GFM tables, task lists, footnotes, strikethrough, Mermaid, KaTeX math (`$...$`, `$$...$$`), syntax highlighting (190 languages), emoji `:smile:`, YAML front matter |
-| Callouts | GitHub alerts (`> [!NOTE]`) and Obsidian callouts (`> [!info] Title`, foldable `> [!todo]-`) |
-| Links | Wiki links `[[Page]]` / `[[Page\|label]]`; local `.md` links and wiki links open in Neovim |
-| Sync | Block-accurate scroll sync, click-to-jump, follows the Markdown buffer you switch to |
-| Navigation | TOC panel (`t`), search (`/` or Ctrl+F), heading anchors |
-| Modes | Presentation mode (`p`, slides split on `---`), print preview with A4 page guides |
-| Git | `:MdPreviewDiff` shows changes against `HEAD`, the index or any branch: word-level inline diff, deleted and previous content, change count, next/previous navigation and scrollbar markers |
-| Export | PDF / DOCX / HTML / EPUB / Markdown with paper size, margins, font, TOC, numbering and custom Typst templates |
-| Look | Dark / light / auto theme, custom CSS |
-| Platforms | Linux (x86_64, arm64), macOS (Intel, Apple Silicon), Windows, WSL |
+- **Your cursor drives the preview, and the preview drives your cursor.** The preview scrolls block by block as you move, and clicking any paragraph puts the cursor on that line in Neovim.
+- **Nothing to install but one binary.** About 2.5 MB of Rust with Mermaid, KaTeX, highlight.js and fonts built in. No Node.js or Deno, no network needed once installed.
+- **It goes beyond previewing.** Export to PDF, DOCX, HTML or EPUB, review your changes against Git, and present the document as slides, all from the same window.
 
-## Requirements
+Requires Neovim 0.9 or later. Vim is not supported.
 
-- Neovim 0.9 or later
-- `curl` (or `wget` / PowerShell) to download the binary. `tar` is used to unpack pandoc and Typst and is preinstalled on macOS, Linux and Windows 10+.
+## Quick start
 
-## Installation
-
-### lazy.nvim
+With [lazy.nvim](https://github.com/folke/lazy.nvim):
 
 ```lua
 {
@@ -48,51 +39,180 @@ Live Markdown preview for Neovim. A single Rust binary, fully offline, no Node.j
 }
 ```
 
-### vim-plug
+Open a Markdown file and run `:MarkdownPreview`. That's it.
+
+<details>
+<summary>vim-plug, packer.nvim</summary>
 
 ```vim
+" vim-plug: then run :MdPreviewInstall once
 Plug 'ywsrock/nvim-md-preview'
 ```
 
-Then run `:MdPreviewInstall` once.
-
-### packer.nvim
-
 ```lua
+-- packer.nvim
 use { "ywsrock/nvim-md-preview", run = ":MdPreviewInstall" }
 ```
 
-`:MdPreviewInstall` downloads the preview binary plus pandoc and Typst in parallel, showing progress on the command line. If you skip it, the binary is downloaded the first time you run `:MarkdownPreview`.
+</details>
 
-Run `:checkhealth md_preview` if something does not work.
+`:MdPreviewInstall` downloads the binary (plus pandoc and Typst for export) in parallel with progress on the command line. Something wrong? Run `:checkhealth md_preview`.
+
+## How it compares
+
+| | **nvim-md-preview** | [markdown-preview.nvim](https://github.com/iamcco/markdown-preview.nvim) | [peek.nvim](https://github.com/toppair/peek.nvim) |
+|---|---|---|---|
+| Runtime | Single Rust binary | Node.js app (prebuilt bundle or build with yarn) | Deno |
+| Works in Vim | No | Yes | No |
+| Preview follows the cursor | Block by block | Yes | Yes |
+| Click the preview to jump in Neovim | **Yes** | No | No |
+| Export to PDF / DOCX / HTML / EPUB | **Built in** | Browser print | No |
+| Git diff of the document | **Yes** | No | No |
+| Slides from the same file | **Yes** | No | No |
+
+In-buffer renderers such as [render-markdown.nvim](https://github.com/MeanderingProgrammer/render-markdown.nvim) and [markview.nvim](https://github.com/OXY2DEV/markview.nvim) solve a different problem. Use them while editing and nvim-md-preview when you want the real page, diagrams and math, or an exported file. They work well together.
+
+This table reflects our understanding as of October 2026. If something is wrong, please [open an issue](https://github.com/ywsrock/nvim-md-preview/issues).
+
+## Highlights
+
+### Two-way sync
+
+The preview keeps the block under your cursor in view, with source-line markers instead of guessing from the scroll ratio. Click a paragraph in the preview and Neovim moves there. Local `.md` links and `[[wiki links]]` open in Neovim too.
+
+### Everything renders, offline
+
+![Preview with Mermaid, math, code and callouts](docs/demo.gif)
+
+GitHub-flavored Markdown, Mermaid diagrams, KaTeX math, syntax highlighting for 190 languages, GitHub alerts and Obsidian callouts, footnotes with hover popups, emoji, front matter, a table of contents and in-page search.
+
+### See what changed
+
+![Inline word diff, removed paragraphs and change navigation](docs/diff.png)
+
+`:MdPreviewDiff` compares the buffer, unsaved edits included, with `HEAD`, the index or any branch. Changed words are underlined or struck through in place, removed paragraphs stay visible as collapsed boxes, and you can jump from change to change.
+
+### Export and present
+
+`:MdPreviewExport pdf` writes a PDF next to your file using Typst, with paper size, margins, fonts, a table of contents and your own template. DOCX, HTML and EPUB go through pandoc. Press `p` in the preview to present the document as slides split on `---`.
+
+## Recipes
+
+<details open>
+<summary><b>Keymaps</b></summary>
+
+```lua
+{
+  "ywsrock/nvim-md-preview",
+  ft = "markdown",
+  build = ":MdPreviewInstall",
+  config = function() require("md_preview").setup({}) end,
+  keys = {
+    { "<leader>mp", "<cmd>MarkdownPreviewToggle<cr>", ft = "markdown", desc = "Markdown: preview" },
+    { "<leader>md", "<cmd>MdPreviewDiff<cr>", ft = "markdown", desc = "Markdown: Git diff" },
+    {
+      "<leader>me",
+      function()
+        vim.ui.select({ "pdf", "docx", "html", "epub" }, { prompt = "Export as" }, function(format)
+          if format then vim.cmd("MdPreviewExport " .. format) end
+        end)
+      end,
+      ft = "markdown",
+      desc = "Markdown: export",
+    },
+  },
+}
+```
+
+</details>
+
+<details>
+<summary><b>Start the preview automatically</b></summary>
+
+Start it with the first Markdown file you open. With `follow_buffer` (on by default), the preview then switches to whichever Markdown buffer you are in.
+
+```lua
+vim.api.nvim_create_autocmd("FileType", {
+  pattern = "markdown",
+  once = true,
+  command = "MarkdownPreview",
+})
+```
+
+</details>
+
+<details>
+<summary><b>Notes in an Obsidian vault</b></summary>
+
+`[[Page]]` and `[[Page|label]]` links and Obsidian callouts (`> [!info] Title`, foldable `> [!todo]-`) work out of the box. Clicking a wiki link opens the note in Neovim, matching names regardless of case, spaces, `-` and `_`. Add your own look with `custom_css = "~/notes/preview.css"`.
+
+</details>
+
+<details>
+<summary><b>Review a pull request's docs</b></summary>
+
+Check out the branch and run `:MdPreviewDiff main`. Every changed paragraph is marked against `main`, with ↑ / ↓ in the preview header to walk through them. `:MdPreviewDiff staged` shows what you are about to commit, and `:MdPreviewDiff off` hides it again.
+
+</details>
+
+<details>
+<summary><b>Hand off a PDF with your company's layout</b></summary>
+
+```lua
+require("md_preview").setup({
+  export = { paper = "a4", toc = true, numbering = true, template = "~/.config/nvim/report.typ" },
+})
+```
+
+```typst
+// ~/.config/nvim/report.typ
+#let template(doc) = {
+  set page(header: align(right)[Internal])
+  set text(font: "Inter", size: 10pt)
+  doc
+}
+```
+
+Then `:MdPreviewExport pdf`. Relative images are resolved from the document's folder.
+
+</details>
+
+<details>
+<summary><b>Follow along on a tablet</b></summary>
+
+Set `host = "0.0.0.0"`. Each time the preview starts, Neovim shows LAN URLs with a one-time token. Open one on your tablet and it follows your cursor like the desktop browser does.
+
+</details>
 
 ## Usage
-
-Open a Markdown file and run `:MarkdownPreview`.
 
 | Command | |
 |---|---|
 | `:MarkdownPreview` / `:MdPreview` | Start the preview |
 | `:MarkdownPreviewStop` / `:MdPreviewStop` | Stop it |
 | `:MarkdownPreviewToggle` | Start or stop |
-| `:MdPreviewExport {format} [path]` | Export the current buffer: `pdf`, `docx`, `html`, `epub`, `markdown`. Without `path`, it is saved next to the file |
-| `:MdPreviewDiff [base]` | Show or hide Git changes. With `base` (`HEAD`, `staged`, a branch, tag or commit) compare against it; `off` hides them |
+| `:MdPreviewExport {format} [path]` | Export the buffer: `pdf`, `docx`, `html`, `epub`, `markdown`. Saved next to the file unless `path` is given |
+| `:MdPreviewDiff [base]` | Toggle the Git diff, or compare with `base` (`HEAD`, `staged`, a branch, tag or commit). `off` hides it |
 | `:MdPreviewInstall` | Download or update the binary, pandoc and Typst |
 
-Keys in the browser:
+In the preview: `t` table of contents, `/` or Ctrl+F search, `p` slides, click to jump. The toolbar buttons do the same. If these keys clash with a browser extension such as Vimium, set `browser_keys = false` (see [FAQ](#faq)).
 
-| Key | |
-|---|---|
-| `t` | Toggle the table of contents |
-| `/`, Ctrl+F | Search (Enter / Shift+Enter to move, Esc to close) |
-| `p` | Presentation mode (arrows to move, `f` fullscreen, Esc to exit) |
-| Click a paragraph | Jump to that line in Neovim |
-
-The toolbar buttons do the same. If these keys clash with a browser extension, set `browser_keys = false` (see [FAQ](#faq)).
+Full reference: `:help md_preview`.
 
 ## Configuration
 
-Defaults are shown. Pass only what you want to change.
+Everything is optional. The most common settings:
+
+```lua
+require("md_preview").setup({
+  theme = "auto",        -- "auto" follows the OS, or "dark" / "light"
+  auto_open = true,      -- open the browser when the preview starts
+  export = { paper = "a4" },
+})
+```
+
+<details>
+<summary>All options with defaults</summary>
 
 ```lua
 require("md_preview").setup({
@@ -121,41 +241,29 @@ require("md_preview").setup({
     font_size = 11,
     toc       = false,      -- table of contents (PDF and pandoc formats)
     numbering = false,      -- numbered headings
-    template  = "",         -- Typst file that exports `template` (see below)
+    template  = "",         -- Typst file that exports `template` (see Recipes)
   },
 })
 ```
 
 Vimscript users can set `g:md_preview_port` and `g:md_preview_auto_open`.
 
-### Git diff
+</details>
 
-![git diff](docs/diff.png)
+## Coming from markdown-preview.nvim
 
-`:MdPreviewDiff` compares the buffer, including unsaved edits, with `HEAD`. `:MdPreviewDiff main` compares with a branch and `:MdPreviewDiff staged` with the index, which is handy for reviewing a pull request or what you are about to commit.
+The commands are the same: `:MarkdownPreview`, `:MarkdownPreviewStop` and `:MarkdownPreviewToggle` keep working. Replace the plugin spec and `build` step, then map your settings:
 
-- Changed paragraphs show inserted words underlined and removed words struck through. Japanese and other text without spaces is compared character by character.
-- Removed paragraphs appear as a collapsed "removed" box where they were. For code, tables, diagrams and math, or paragraphs that were mostly rewritten, a collapsed box shows the previous version instead.
-- Changed blocks get a bar and a symbol (`+` added, `~` changed, `−` removed), so they can be told apart without color.
-- The header shows the number of changes with ↑ / ↓ to jump between them, and markers beside the scrollbar show where they are in the document.
-- Colors follow your editor's diff colors when they are readable on the preview's theme, and fall back to green, yellow and red otherwise.
-
-### Custom PDF template
-
-`export.template` points to a Typst file that exports a `template` function. It is applied as a show rule around the document:
-
-```typst
-// ~/.config/nvim/md-template.typ
-#let template(doc) = {
-  set page(paper: "a4", header: align(right)[Internal])
-  set text(font: "Inter", size: 10pt)
-  doc
-}
-```
-
-### Viewing from a tablet or another computer
-
-Set `host = "0.0.0.0"`. Each time the preview starts, a random token is generated and the LAN URLs are shown in Neovim. Only those URLs (or a browser that already opened one) can access the preview.
+| markdown-preview.nvim | nvim-md-preview |
+|---|---|
+| `build = "cd app && npx --yes yarn install"` | `build = ":MdPreviewInstall"` |
+| `g:mkdp_port` | `port` |
+| `g:mkdp_theme` | `theme` |
+| `g:mkdp_markdown_css` | `custom_css` |
+| `g:mkdp_open_to_the_world = 1` | `host = "0.0.0.0"` (protected by a token) |
+| `g:mkdp_preview_options.disable_sync_scroll = 1` | `scroll_sync = false` |
+| `g:mkdp_auto_start = 1` | The [auto-start recipe](#recipes) |
+| `g:mkdp_browser` | Not supported yet. Set `auto_open = false` and open the URL yourself |
 
 ## FAQ
 
@@ -185,6 +293,10 @@ The extension usually receives the key first, so the preview never sees it. You 
 
   If you changed `port` or use LAN mode, adjust the address accordingly.
 
+### Does it send my documents anywhere?
+
+No. The server listens on `127.0.0.1` only, and everything it needs is inside the binary. See [Security](#security).
+
 ## How it works
 
 ```
@@ -201,22 +313,15 @@ The server binds to `127.0.0.1` unless you set `host`. It rejects requests whose
 
 Versions up to v0.1.0 allowed other websites to read local files while a preview was running. Update with `:MdPreviewInstall`.
 
-## Building from source
+## Contributing
+
+Bug reports, ideas and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for building from source, tests and the release flow.
 
 ```bash
 git clone https://github.com/ywsrock/nvim-md-preview
 cd nvim-md-preview
-bash download-libs.sh      # fetch the JS/CSS libraries embedded in the binary
-cargo build --release
+bash download-libs.sh && cargo build --release
 ```
-
-Then point the plugin at the binary:
-
-```lua
-require("md_preview").setup({ binary = "/path/to/nvim-md-preview/target/release/nvim-md-preview" })
-```
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for tests and the development workflow.
 
 ## Acknowledgements
 
