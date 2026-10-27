@@ -35,9 +35,9 @@ M.config = {
 
   -- エクスポート設定
   export = {
-    -- PDF エンジン: "typst"（高品質・推奨）| "print"（ブラウザ印刷・依存なし）
+    -- PDF エンジン: "typst"。それ以外にすると :MdPreviewInstall で Typst をダウンロードしない
     pdf_engine  = "typst",
-    -- DOCX/HTML/EPUB エンジン: "pandoc"（推奨）| "none"（無効）
+    -- DOCX/HTML/EPUB エンジン: "pandoc"。それ以外にすると pandoc をダウンロードしない
     docx_engine = "pandoc",
     -- 表示するエクスポート形式（不要なものは削除可）
     formats = { "pdf", "docx", "html", "epub", "markdown" },

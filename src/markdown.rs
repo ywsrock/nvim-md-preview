@@ -103,6 +103,8 @@ pub fn to_html(markdown: &str, line_offset: usize, opts: RenderOptions) -> Strin
     options.insert(Options::ENABLE_STRIKETHROUGH);
     options.insert(Options::ENABLE_TASKLISTS);
     options.insert(Options::ENABLE_SMART_PUNCTUATION);
+    // $...$ / $$...$$ を Markdown のエスケープ処理より先に数式として切り出す（\, や \{ が壊れないように）
+    options.insert(Options::ENABLE_MATH);
 
     // バイトオフセット → 行番号 の変換表（各行の開始オフセット）
     let line_starts: Vec<usize> = std::iter::once(0)
@@ -139,6 +141,11 @@ pub fn to_html(markdown: &str, line_offset: usize, opts: RenderOptions) -> Strin
             }
         }
         match &event {
+            // 数式は KaTeX の auto-render が拾う \( \) / \[ \] で囲んで出す（中身は HTML エスケープ）
+            Event::InlineMath(tex) => events.push(Event::InlineHtml(CowStr::from(
+                format!(r#"<span class="math-inline">\({}\)</span>"#, html_escape(tex))))),
+            Event::DisplayMath(tex) => events.push(Event::InlineHtml(CowStr::from(
+                format!(r#"<span class="math-display">\[{}\]</span>"#, html_escape(tex))))),
             Event::Start(Tag::Table(_)) => { in_table += 1; events.push(event); }
             Event::End(TagEnd::Table) => { in_table -= 1; events.push(event); }
             Event::End(TagEnd::CodeBlock) => { in_code = false; events.push(event); }
@@ -262,6 +269,19 @@ mod tests {
         let html = to_html("```\n[[x]]\n```\n\n[[unclosed\n", 0, opts);
         assert!(!html.contains("wiki-link"), "{}", html);
         assert!(html.contains("[[unclosed"), "{}", html);
+    }
+
+    #[test]
+    fn math_keeps_backslash_escapes() {
+        let html = to_html("$a\\,b \\{x\\}$ and $$\\frac{1}{2}$$\n", 0, RenderOptions::default());
+        assert!(html.contains(r#"<span class="math-inline">\(a\,b \{x\}\)</span>"#), "{}", html);
+        assert!(html.contains(r#"<span class="math-display">\[\frac{1}{2}\]</span>"#), "{}", html);
+    }
+
+    #[test]
+    fn dollar_amounts_are_not_math() {
+        let html = to_html("costs $5 and $10\n", 0, RenderOptions::default());
+        assert!(!html.contains("math-inline"), "{}", html);
     }
 
     #[test]

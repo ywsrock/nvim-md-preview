@@ -822,6 +822,7 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
     #content h5{border-left:3px solid var(--color-h5)}
     #content h6{border-left:3px solid var(--color-h6)}
     #content p{margin:0 0 1em}
+    #content .math-display{display:block;overflow-x:auto;margin:1em 0}
     #content a{color:var(--link);text-decoration:none}
     #content a:hover{text-decoration:underline}
     #content strong{font-weight:600}
@@ -949,13 +950,16 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       padding:1rem .6rem 2rem;background:var(--panel);border-right:1px solid var(--stroke);
       font-size:.82rem;transform:translateX(-100%);transition:transform .2s}
     body.toc-open #toc{transform:none}
-    @media(min-width:1280px){body.toc-open #content,body.toc-open #fm-panel{margin-left:max(280px,calc((100vw - 900px)/2))}}
+    /* 目次を開いたら本文を右に寄せる（狭い画面では重ねて表示） */
+    @media(min-width:900px){body.toc-open #content,body.toc-open #fm-panel{
+      margin-left:max(280px,calc((100vw - 900px)/2));max-width:min(900px,calc(100vw - 300px))}}
     #toc a{display:block;padding:.18rem .5rem;border-radius:5px;color:var(--fg-muted);
       text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     #toc a:hover{background:var(--badge-bg);color:var(--fg)}
     #toc a.active{color:var(--accent);background:var(--badge-bg);font-weight:600}
     #toc .toc-empty{color:var(--fg-muted);padding:.5rem}
     /* 検索バー */
+    #searchBar[hidden]{display:none}
     #searchBar{position:fixed;top:3.2rem;right:1rem;z-index:25;display:flex;gap:.4rem;align-items:center;
       padding:.4rem .5rem;background:var(--panel);border:1px solid var(--stroke);border-radius:8px;
       box-shadow:0 4px 12px rgba(0,0,0,.25)}
@@ -1555,9 +1559,9 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
     function renderMath(root) {
       if (!window.renderMathInElement) return;
       renderMathInElement(root, {
+        // $ / $$ は Rust 側（pulldown-cmark の数式対応）で \( \) / \[ \] に変換済み。
+        // ここで $ を区切りにすると "$5 and $10" のような金額まで数式になるので使わない
         delimiters: [
-          { left: '$$', right: '$$', display: true },
-          { left: '$',  right: '$',  display: false },
           { left: '\\[', right: '\\]', display: true },
           { left: '\\(', right: '\\)', display: false },
         ],
