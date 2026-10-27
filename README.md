@@ -108,6 +108,26 @@ Markdown ファイルを開いて:
 require("md_preview").setup({
   port      = 9876,   -- HTTP サーバーのポート番号（競合時は自動で別ポートを使用）
   auto_open = true,   -- プレビュー開始時に自動でブラウザを開く
+
+  -- エクスポート設定
+  export = {
+    -- PDF エンジン
+    --   "typst"  : 高品質 PDF（デフォルト。:MdPreviewInstall で自動ダウンロード）
+    --   "print"  : ブラウザ印刷ダイアログ（Typst 不要）
+    pdf_engine  = "typst",
+
+    -- DOCX/HTML/EPUB エンジン
+    --   "pandoc" : 高品質変換（デフォルト。:MdPreviewInstall で自動ダウンロード）
+    --   "none"   : エクスポート無効
+    docx_engine = "pandoc",
+
+    -- 表示するエクスポート形式（不要なものは削除可）
+    formats = { "pdf", "docx", "html", "epub", "markdown" },
+
+    -- バイナリパスを手動指定（省略時は自動ダウンロード先を使用）
+    pandoc_path = "",
+    typst_path  = "",
+  },
 })
 ```
 
@@ -116,6 +136,60 @@ require("md_preview").setup({
 ```vim
 let g:md_preview_port      = 9876   " ポート番号
 let g:md_preview_auto_open = 1      " 自動でブラウザを開く（0 で無効）
+```
+
+---
+
+## エクスポート機能
+
+プレビュー画面のツールバーにある **Export ▼** ボタンから各形式でエクスポートできます。
+
+| 形式 | エンジン | 品質 | 必要なもの |
+|---|---|---|---|
+| **PDF** | Typst | ⭐⭐⭐⭐⭐ | `:MdPreviewInstall` で自動インストール |
+| **DOCX** | pandoc | ⭐⭐⭐⭐⭐ | `:MdPreviewInstall` で自動インストール |
+| **HTML** | pandoc | ⭐⭐⭐⭐⭐ | `:MdPreviewInstall` で自動インストール |
+| **EPUB** | pandoc | ⭐⭐⭐⭐ | `:MdPreviewInstall` で自動インストール |
+| **Markdown** | なし | — | 不要 |
+
+### インストール（初回のみ）
+
+`:MdPreviewInstall` を実行すると以下が自動でダウンロードされます：
+
+```
+~/.local/share/nvim/nvim-md-preview/
+  ├── nvim-md-preview    ← プレビューバイナリ
+  ├── pandoc             ← DOCX/HTML/EPUB 用（~30MB）
+  └── typst              ← PDF 用（~30MB）
+```
+
+### エンジンを変更したい場合
+
+```lua
+-- PDF をブラウザ印刷に変更（Typst 不要）
+require("md_preview").setup({
+  export = {
+    pdf_engine  = "print",   -- ブラウザの印刷ダイアログを使用
+    docx_engine = "pandoc",
+  },
+})
+
+-- pandoc を使わない（DOCX/HTML/EPUB を無効化）
+require("md_preview").setup({
+  export = {
+    pdf_engine  = "typst",
+    docx_engine = "none",
+    formats     = { "pdf", "markdown" },  -- PDF と Markdown のみ表示
+  },
+})
+
+-- 手動インストールしたバイナリを使用
+require("md_preview").setup({
+  export = {
+    pandoc_path = "/usr/local/bin/pandoc",
+    typst_path  = "/usr/local/bin/typst",
+  },
+})
 ```
 
 ---

@@ -66,6 +66,9 @@ async fn run_rpc_loop(state: Arc<AppState>) {
             "md_preview_scroll" => {
                 handle_scroll(&state, &params);
             }
+            "md_preview_config" => {
+                handle_config(&state, &params).await;
+            }
             _ => {}
         }
     }
@@ -117,9 +120,15 @@ async fn handle_update(state: &AppState, params: &[rmpv::Value]) {
     let Some(content) = params.first().and_then(|v| v.as_str()) else { return; };
     let title        = params.get(1).and_then(|v| v.as_str()).unwrap_or("md Preview");
     let base_dir_str = params.get(2).and_then(|v| v.as_str()).unwrap_or("");
+    let file_path_str = params.get(3).and_then(|v| v.as_str()).unwrap_or("");
 
     if !base_dir_str.is_empty() {
         *state.base_dir.write().await = Some(PathBuf::from(base_dir_str));
+    }
+
+    // 現在のファイルパスを保存（エクスポートに使用）
+    if !file_path_str.is_empty() {
+        *state.current_file.write().await = Some(PathBuf::from(file_path_str));
     }
 
     let (front_matter, body) = markdown::extract_front_matter(content);
@@ -133,6 +142,20 @@ async fn handle_update(state: &AppState, params: &[rmpv::Value]) {
     }).to_string();
 
     state.update_html(payload).await;
+}
+
+/// `md_preview_config` 処理 — エンジンパスを受け取る
+/// params: [pandoc_path, typst_path]
+async fn handle_config(state: &AppState, params: &[rmpv::Value]) {
+    let pandoc_str = params.first().and_then(|v| v.as_str()).unwrap_or("");
+    let typst_str  = params.get(1).and_then(|v| v.as_str()).unwrap_or("");
+
+    if !pandoc_str.is_empty() {
+        *state.pandoc_path.write().await = Some(PathBuf::from(pandoc_str));
+    }
+    if !typst_str.is_empty() {
+        *state.typst_path.write().await = Some(PathBuf::from(typst_str));
+    }
 }
 
 /// `md_preview_scroll` 処理

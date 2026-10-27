@@ -56,6 +56,12 @@ pub struct AppState {
     pub tx: HtmlSender,
     pub latest_html: Arc<RwLock<Option<String>>>,
     pub base_dir: Arc<RwLock<Option<PathBuf>>>,
+    /// 現在プレビュー中のファイルのフルパス（エクスポートに使用）
+    pub current_file: Arc<RwLock<Option<PathBuf>>>,
+    /// pandoc バイナリのパス
+    pub pandoc_path: Arc<RwLock<Option<PathBuf>>>,
+    /// Typst バイナリのパス
+    pub typst_path: Arc<RwLock<Option<PathBuf>>>,
 }
 
 impl AppState {
@@ -64,6 +70,9 @@ impl AppState {
             tx,
             latest_html: Arc::new(RwLock::new(None)),
             base_dir: Arc::new(RwLock::new(None)),
+            current_file: Arc::new(RwLock::new(None)),
+            pandoc_path: Arc::new(RwLock::new(None)),
+            typst_path: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -85,6 +94,7 @@ pub async fn start_server(port: u16, state: Arc<AppState>) {
         .route("/", get(preview_page))
         .route("/ws", get(ws_handler))
         .route("/assets", get(assets_handler))
+        .route("/export", get(export_handler))
         .route("/lib/highlight.min.js",    get(|| async { js_response(HLJS_JS) }))
         .route("/lib/hljs-dark.min.css",   get(|| async { css_response(HLJS_DARK_CSS) }))
         .route("/lib/hljs-light.min.css",  get(|| async { css_response(HLJS_LIGHT_CSS) }))
@@ -96,7 +106,6 @@ pub async fn start_server(port: u16, state: Arc<AppState>) {
         .layer(CorsLayer::permissive())
         .with_state(state);
 
-    // 実際に使用するポートを stderr に出力（Lua の on_stderr で受け取る）
     eprintln!("READY:{}", bound_port);
     axum::serve(listener, app).await.unwrap();
 }
@@ -200,6 +209,212 @@ async fn assets_handler(
         }
         Err(_) => StatusCode::NOT_FOUND.into_response(),
     }
+}
+
+/// /export?format=pdf|docx|html|epub|markdown — エクスポートハンドラ
+#[derive(Deserialize)]
+struct ExportParams {
+    format: String,
+}
+
+async fn export_handler(
+    Query(params): Query<ExportParams>,
+    State(state): State<Arc<AppState>>,
+) -> Response {
+    let current_file = state.current_file.read().await;
+    let Some(md_path) = current_file.as_ref() else {
+        return error_response("ファイルが開かれていません。:MdPreview でプレビューを開始してください。");
+    };
+
+    let format = params.format.to_lowercase();
+    let stem = md_path.file_stem().and_then(|s| s.to_str()).unwrap_or("export");
+
+    match format.as_str() {
+        // Markdown: ファイルをそのまま返す
+        "markdown" | "md" => {
+            match tokio::fs::read(md_path).await {
+                Ok(data) => {
+                    let filename = format!("{}.md", stem);
+                    download_response(data, &filename, "text/markdown; charset=utf-8")
+                }
+                Err(_) => error_response("ファイルの読み込みに失敗しました。"),
+            }
+        }
+
+        // DOCX: pandoc で変換
+        "docx" => {
+            let pandoc = state.pandoc_path.read().await;
+            let pandoc_bin = pandoc.as_ref()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| "pandoc".to_string());
+            convert_with_pandoc(&pandoc_bin, md_path, stem, "docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document").await
+        }
+
+        // HTML: pandoc でスタンドアロン HTML
+        "html" => {
+            let pandoc = state.pandoc_path.read().await;
+            let pandoc_bin = pandoc.as_ref()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| "pandoc".to_string());
+            convert_with_pandoc(&pandoc_bin, md_path, stem, "html", "text/html; charset=utf-8").await
+        }
+
+        // EPUB: pandoc で変換
+        "epub" => {
+            let pandoc = state.pandoc_path.read().await;
+            let pandoc_bin = pandoc.as_ref()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| "pandoc".to_string());
+            convert_with_pandoc(&pandoc_bin, md_path, stem, "epub", "application/epub+zip").await
+        }
+
+        // PDF: Typst で変換
+        "pdf" => {
+            let typst = state.typst_path.read().await;
+            let typst_bin = typst.as_ref()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| "typst".to_string());
+            convert_with_typst(&typst_bin, md_path, stem).await
+        }
+
+        _ => error_response(&format!("未対応の形式: {}", format)),
+    }
+}
+
+/// pandoc でファイルを変換してレスポンスとして返す
+async fn convert_with_pandoc(
+    pandoc_bin: &str,
+    md_path: &PathBuf,
+    stem: &str,
+    format: &str,
+    mime: &str,
+) -> Response {
+    let out_path = std::env::temp_dir().join(format!("nvim_md_preview_export.{}", format));
+
+    let mut args = vec![
+        md_path.to_string_lossy().to_string(),
+        "-o".to_string(),
+        out_path.to_string_lossy().to_string(),
+        "--from=markdown+gfm_auto_identifiers".to_string(),
+    ];
+
+    // HTML はスタンドアロンで出力
+    if format == "html" {
+        args.push("--standalone".to_string());
+    }
+
+    let result = tokio::process::Command::new(pandoc_bin)
+        .args(&args)
+        .output()
+        .await;
+
+    match result {
+        Ok(output) if output.status.success() => {
+            match tokio::fs::read(&out_path).await {
+                Ok(data) => {
+                    let _ = tokio::fs::remove_file(&out_path).await;
+                    download_response(data, &format!("{}.{}", stem, format), mime)
+                }
+                Err(_) => error_response("変換結果の読み込みに失敗しました。"),
+            }
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            error_response(&format!(
+                "pandoc 変換に失敗しました。pandoc がインストールされているか確認してください。\n\
+                 インストール: :MdPreviewInstall\n\nエラー: {}",
+                &stderr[..stderr.len().min(500)]
+            ))
+        }
+        Err(e) => error_response(&format!(
+            "pandoc が見つかりません。:MdPreviewInstall でインストールしてください。\n\nエラー: {}",
+            e
+        )),
+    }
+}
+
+/// Typst で Markdown → PDF に変換
+async fn convert_with_typst(typst_bin: &str, md_path: &PathBuf, stem: &str) -> Response {
+    // Typst は .typ 形式を受け取るので、Markdown を wrap する
+    let md_content = match tokio::fs::read_to_string(md_path).await {
+        Ok(c) => c,
+        Err(_) => return error_response("ファイルの読み込みに失敗しました。"),
+    };
+
+    // Typst の cmarker パッケージで Markdown をそのまま処理
+    let typ_content = format!(
+        r#"#import "@preview/cmarker:0.1.4": render
+#set page(margin: 2cm)
+#set text(font: ("Noto Serif CJK JP", "Noto Serif", "Georgia"), size: 11pt)
+#set heading(numbering: none)
+
+#render(
+  ```
+{}
+```,
+  h1-level: 1
+)
+"#,
+        md_content.replace('`', "\\`")
+    );
+
+    let typ_path = std::env::temp_dir().join("nvim_md_preview_export.typ");
+    let pdf_path = std::env::temp_dir().join("nvim_md_preview_export.pdf");
+
+    if let Err(e) = tokio::fs::write(&typ_path, &typ_content).await {
+        return error_response(&format!("一時ファイルの作成に失敗: {}", e));
+    }
+
+    let result = tokio::process::Command::new(typst_bin)
+        .args(["compile", &typ_path.to_string_lossy(), &pdf_path.to_string_lossy()])
+        .output()
+        .await;
+
+    let _ = tokio::fs::remove_file(&typ_path).await;
+
+    match result {
+        Ok(output) if output.status.success() => {
+            match tokio::fs::read(&pdf_path).await {
+                Ok(data) => {
+                    let _ = tokio::fs::remove_file(&pdf_path).await;
+                    download_response(data, &format!("{}.pdf", stem), "application/pdf")
+                }
+                Err(_) => error_response("PDF の読み込みに失敗しました。"),
+            }
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            error_response(&format!(
+                "Typst 変換に失敗しました。:MdPreviewInstall で Typst をインストールしてください。\n\nエラー: {}",
+                &stderr[..stderr.len().min(500)]
+            ))
+        }
+        Err(e) => error_response(&format!(
+            "Typst が見つかりません。:MdPreviewInstall でインストールしてください。\n\nエラー: {}",
+            e
+        )),
+    }
+}
+
+/// ダウンロードレスポンスを生成
+fn download_response(data: Vec<u8>, filename: &str, mime: &str) -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, mime.to_string()),
+            (header::CONTENT_DISPOSITION, format!("attachment; filename=\"{}\"", filename)),
+        ],
+        data,
+    ).into_response()
+}
+
+/// エラーレスポンスを JSON で返す
+fn error_response(msg: &str) -> Response {
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        [(header::CONTENT_TYPE, "application/json")],
+        serde_json::json!({"error": msg}).to_string(),
+    ).into_response()
 }
 
 /// 拡張子から MIME タイプを返す
@@ -362,6 +577,11 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
     #overlay-panzoom.dragging{cursor:grabbing}
     #overlay-panzoom-inner svg{display:block}
     @media(max-width:768px){#content{padding:1rem 1rem 3rem}}
+    /* Export メニュー */
+    .export-item{display:block;width:100%;text-align:left;padding:.5rem .9rem;
+      background:transparent;border:none;color:var(--fg);cursor:pointer;
+      font-size:.82rem;white-space:nowrap;transition:background .1s}
+    .export-item:hover{background:rgba(127,127,127,.12)}
     /* front matter panel */
     #fm-panel{margin:.5rem auto 0;max-width:900px;padding:0 2rem;
       border:none;font-size:.85rem}
@@ -414,6 +634,21 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
         <path id="moonPath" d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     </button>
+    <!-- Export ドロップダウン -->
+    <div style="position:relative">
+      <button id="exportBtn" class="btn btn-text" title="エクスポート" style="font-size:.78rem;gap:.3rem;width:auto;padding:.35rem .65rem">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Export
+      </button>
+      <div id="exportMenu" style="display:none;position:absolute;right:0;top:100%;min-width:160px;background:var(--panel);border:1px solid var(--stroke);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.3);z-index:20;overflow:hidden">
+        <button class="export-item" onclick="exportAs('pdf')">📄 PDF <span style="font-size:.7rem;color:var(--fg-muted)">(Typst)</span></button>
+        <button class="export-item" onclick="exportAs('docx')">📝 DOCX <span style="font-size:.7rem;color:var(--fg-muted)">(pandoc)</span></button>
+        <button class="export-item" onclick="exportAs('html')">🌐 HTML <span style="font-size:.7rem;color:var(--fg-muted)">(pandoc)</span></button>
+        <button class="export-item" onclick="exportAs('epub')">📚 EPUB <span style="font-size:.7rem;color:var(--fg-muted)">(pandoc)</span></button>
+        <div style="height:1px;background:var(--stroke);margin:.25rem 0"></div>
+        <button class="export-item" onclick="exportAs('markdown')">🔤 Markdown</button>
+      </div>
+    </div>
   </header>
 
   <div id="loadingSkeleton" class="skeleton">
@@ -894,6 +1129,32 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
 
     applyTheme('dark');
     connect();
+
+    // ── Export ────────────────────────────────────────────────────
+    const exportBtn  = document.getElementById('exportBtn');
+    const exportMenu = document.getElementById('exportMenu');
+
+    exportBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      exportMenu.style.display = exportMenu.style.display === 'none' ? 'block' : 'none';
+    });
+    document.addEventListener('click', () => { exportMenu.style.display = 'none'; });
+
+    function exportAs(format) {
+      exportMenu.style.display = 'none';
+      // PDF はブラウザ印刷を使用（Typst は /export 経由）
+      if (format === 'pdf') {
+        window.open(`/export?format=pdf`, '_blank');
+        return;
+      }
+      // その他は /export エンドポイント経由でダウンロード
+      const link = document.createElement('a');
+      link.href = `/export?format=${format}`;
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
   </script>
 </body>
 </html>

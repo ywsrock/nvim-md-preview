@@ -10,11 +10,23 @@ local _plugin_dir = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h:
 
 -- 設定のデフォルト値
 M.config = {
-  -- Rust バイナリのパス（install() でダウンロードしたものを優先）
   binary = vim.fn.stdpath("data") .. "/nvim-md-preview/nvim-md-preview"
     .. (vim.fn.has("win32") == 1 and ".exe" or ""),
   port = 9876,
   auto_open = true,
+
+  -- エクスポート設定
+  export = {
+    -- PDF エンジン: "typst"（高品質・推奨）| "print"（ブラウザ印刷・依存なし）
+    pdf_engine  = "typst",
+    -- DOCX/HTML/EPUB エンジン: "pandoc"（推奨）| "none"（無効）
+    docx_engine = "pandoc",
+    -- 表示するエクスポート形式（不要なものは削除可）
+    formats = { "pdf", "docx", "html", "epub", "markdown" },
+    -- バイナリパス（空の場合は自動ダウンロード先 ~/.local/share/nvim/nvim-md-preview/ を使用）
+    pandoc_path = "",
+    typst_path  = "",
+  },
 }
 
 local state = {
@@ -53,11 +65,11 @@ end
 --- Rust バイナリに Markdown テキストを送る
 local function send_update(buf)
   if state.chan_id == nil then return end
-  local content  = get_buf_content(buf)
-  local title    = get_buf_title(buf)
-  local base_dir = get_buf_dir(buf)
-  -- chan_id が無効になっている場合（バイナリ終了後）はエラーを無視
-  pcall(vim.rpcnotify, state.chan_id, "md_preview_update", content, title, base_dir)
+  local content   = get_buf_content(buf)
+  local title     = get_buf_title(buf)
+  local base_dir  = get_buf_dir(buf)
+  local file_path = vim.api.nvim_buf_get_name(buf)  -- フルパス（エクスポート用）
+  pcall(vim.rpcnotify, state.chan_id, "md_preview_update", content, title, base_dir, file_path)
 end
 
 --- Rust バイナリにカーソル行を送る（スクロール同期）
@@ -188,8 +200,12 @@ function M.start()
     send_update(buf)
   end, 500)
 
+  -- エンジンパスをバイナリに送る（500ms 後、バイナリ起動完了後）
+  vim.defer_fn(function()
+    send_export_config()
+  end, 600)
+
   -- READY:<port> が届くまで少し待ってからブラウザを開く
-  -- ポート競合時は actual_port が変わっている
   vim.defer_fn(function()
     local port = state.actual_port or M.config.port
     local url = string.format("http://127.0.0.1:%d", port)
@@ -223,6 +239,38 @@ local function detect_wsl()
   local content = f:read("*a"):lower()
   f:close()
   return content:find("microsoft") ~= nil or content:find("wsl") ~= nil
+end
+
+--- エクスポートエンジンのパスを解決してバイナリに送る
+local function send_export_config()
+  if state.chan_id == nil then return end
+
+  local install_dir = vim.fn.stdpath("data") .. "/nvim-md-preview"
+  local is_win = vim.fn.has("win32") == 1
+
+  -- pandoc パス解決
+  local pandoc_path = M.config.export.pandoc_path
+  if pandoc_path == "" then
+    local auto = install_dir .. "/pandoc" .. (is_win and ".exe" or "")
+    if vim.fn.executable(auto) == 1 then
+      pandoc_path = auto
+    elseif vim.fn.executable("pandoc") == 1 then
+      pandoc_path = "pandoc"
+    end
+  end
+
+  -- Typst パス解決
+  local typst_path = M.config.export.typst_path
+  if typst_path == "" then
+    local auto = install_dir .. "/typst" .. (is_win and ".exe" or "")
+    if vim.fn.executable(auto) == 1 then
+      typst_path = auto
+    elseif vim.fn.executable("typst") == 1 then
+      typst_path = "typst"
+    end
+  end
+
+  pcall(vim.rpcnotify, state.chan_id, "md_preview_config", pandoc_path, typst_path)
 end
 
 --- OS・環境に応じてブラウザを開く
@@ -272,7 +320,12 @@ function M.install()
   local sysname  = uname.sysname  -- "Linux" / "Darwin" / "Windows_NT"
   local machine  = uname.machine  -- "x86_64" / "arm64" / "aarch64"
 
-  -- プラットフォーム判定
+  local is_win = sysname:match("Windows") ~= nil or vim.fn.has("win32") == 1
+  local ext    = is_win and ".exe" or ""
+  local install_dir = vim.fn.stdpath("data") .. "/nvim-md-preview"
+  vim.fn.mkdir(install_dir, "p")
+
+  -- ── 1. nvim-md-preview バイナリ ──────────────────────────────
   local target
   if sysname == "Linux" then
     target = "x86_64-unknown-linux-gnu"
@@ -280,52 +333,140 @@ function M.install()
     target = (machine == "arm64" or machine == "aarch64")
       and "aarch64-apple-darwin" or "x86_64-apple-darwin"
   else
-    -- Windows / WSL
     target = "x86_64-pc-windows-msvc"
   end
 
-  local is_win  = sysname:match("Windows") ~= nil or vim.fn.has("win32") == 1
-  local ext     = is_win and ".exe" or ""
-  local repo    = "ywsrock/nvim-md-preview"
-  local fname   = "nvim-md-preview-" .. target .. ext
-  local url     = string.format(
-    "https://github.com/%s/releases/latest/download/%s", repo, fname)
-
-  local install_dir = vim.fn.stdpath("data") .. "/nvim-md-preview"
-  vim.fn.mkdir(install_dir, "p")
+  local fname  = "nvim-md-preview-" .. target .. ext
+  local url    = string.format("https://github.com/ywsrock/nvim-md-preview/releases/latest/download/%s", fname)
   local binary = install_dir .. "/nvim-md-preview" .. ext
 
-  vim.notify("[md-preview] ダウンロード中...\n" .. url, vim.log.levels.INFO)
+  local ok = M._download(url, binary)
+  if not ok then
+    vim.notify("[md-preview] バイナリのダウンロードに失敗。ソースからビルドを試みます...", vim.log.levels.WARN)
+    if not M._build_from_source() then return false end
+  else
+    if not is_win then vim.fn.system('chmod +x "' .. binary .. '"') end
+    M.config.binary = binary
+    vim.notify("[md-preview] ✅ nvim-md-preview: " .. binary, vim.log.levels.INFO)
+  end
 
-  -- curl または wget を使ってダウンロード
+  -- ── 2. pandoc（DOCX/HTML/EPUB 用） ───────────────────────────
+  local cfg = M.config.export
+  if cfg.docx_engine == "pandoc" then
+    vim.notify("[md-preview] pandoc をダウンロード中...", vim.log.levels.INFO)
+    local pandoc_ok = M._install_pandoc(install_dir, sysname, machine, is_win, ext)
+    if pandoc_ok then
+      vim.notify("[md-preview] ✅ pandoc インストール完了", vim.log.levels.INFO)
+    else
+      vim.notify("[md-preview] ⚠️  pandoc のダウンロードに失敗しました。手動でインストールしてください。", vim.log.levels.WARN)
+    end
+  end
+
+  -- ── 3. Typst（PDF 用） ────────────────────────────────────────
+  if cfg.pdf_engine == "typst" then
+    vim.notify("[md-preview] Typst をダウンロード中...", vim.log.levels.INFO)
+    local typst_ok = M._install_typst(install_dir, sysname, machine, is_win, ext)
+    if typst_ok then
+      vim.notify("[md-preview] ✅ Typst インストール完了", vim.log.levels.INFO)
+    else
+      vim.notify("[md-preview] ⚠️  Typst のダウンロードに失敗しました。PDF はブラウザ印刷を使用します。", vim.log.levels.WARN)
+    end
+  end
+
+  vim.notify("[md-preview] インストール完了！", vim.log.levels.INFO)
+  return true
+end
+
+--- ファイルをダウンロードするヘルパー
+function M._download(url, dest)
   local cmd
   if vim.fn.executable("curl") == 1 then
-    cmd = string.format('curl -fsSL -o "%s" "%s"', binary, url)
+    cmd = string.format('curl -fsSL -o "%s" "%s"', dest, url)
   elseif vim.fn.executable("wget") == 1 then
-    cmd = string.format('wget -q -O "%s" "%s"', binary, url)
+    cmd = string.format('wget -q -O "%s" "%s"', dest, url)
   else
     vim.notify("[md-preview] curl または wget が必要です", vim.log.levels.ERROR)
-    return M._build_from_source()
+    return false
+  end
+  vim.fn.system(cmd)
+  return vim.v.shell_error == 0
+end
+
+--- pandoc をインストール
+function M._install_pandoc(install_dir, sysname, machine, is_win, ext)
+  -- pandoc GitHub Releases の URL
+  -- https://github.com/jgm/pandoc/releases/latest/download/
+  local fname
+  if sysname == "Linux" then
+    fname = "pandoc-linux-amd64.tar.gz"
+  elseif sysname == "Darwin" then
+    fname = (machine == "arm64" or machine == "aarch64")
+      and "pandoc-macOS-arm64.zip" or "pandoc-macOS-x86_64.zip"
+  else
+    fname = "pandoc-windows-x86_64.zip"
   end
 
-  local result = vim.fn.system(cmd)
-  if vim.v.shell_error ~= 0 then
-    vim.notify(
-      "[md-preview] リリースバイナリのダウンロードに失敗しました。\n"
-      .. "ソースからビルドを試みます（cargo が必要です）...",
-      vim.log.levels.WARN
-    )
-    return M._build_from_source()
+  local url     = "https://github.com/jgm/pandoc/releases/latest/download/" .. fname
+  local archive = install_dir .. "/" .. fname
+  local pandoc  = install_dir .. "/pandoc" .. ext
+
+  if not M._download(url, archive) then return false end
+
+  -- 解凍
+  local ok
+  if fname:match("%.tar%.gz$") then
+    ok = vim.fn.system(string.format(
+      'tar -xzf "%s" -C "%s" --wildcards "*/bin/pandoc" --strip-components=2 2>/dev/null || '
+      .. 'tar -xzf "%s" -C "%s" --wildcards "*/pandoc" --strip-components=2',
+      archive, install_dir, archive, install_dir
+    ))
+    -- 解凍されたファイルを正しい位置に移動
+    vim.fn.system(string.format('mv "%s/pandoc" "%s" 2>/dev/null; true', install_dir, pandoc))
+  else
+    ok = vim.fn.system(string.format('unzip -jo "%s" "*/pandoc%s" -d "%s"', archive, ext, install_dir))
+  end
+  vim.fn.delete(archive)
+
+  if vim.fn.executable(pandoc) == 1 then
+    if not is_win then vim.fn.system('chmod +x "' .. pandoc .. '"') end
+    return true
+  end
+  return false
+end
+
+--- Typst をインストール
+function M._install_typst(install_dir, sysname, machine, is_win, ext)
+  -- Typst GitHub Releases の URL
+  -- https://github.com/typst/typst/releases/latest/download/
+  local fname
+  if sysname == "Linux" then
+    fname = "typst-x86_64-unknown-linux-musl.tar.xz"
+  elseif sysname == "Darwin" then
+    fname = (machine == "arm64" or machine == "aarch64")
+      and "typst-aarch64-apple-darwin.tar.xz" or "typst-x86_64-apple-darwin.tar.xz"
+  else
+    fname = "typst-x86_64-pc-windows-msvc.zip"
   end
 
-  -- 実行権限を付与（Unix のみ）
-  if not is_win then
-    vim.fn.system('chmod +x "' .. binary .. '"')
-  end
+  local url     = "https://github.com/typst/typst/releases/latest/download/" .. fname
+  local archive = install_dir .. "/" .. fname
+  local typst   = install_dir .. "/typst" .. ext
 
-  M.config.binary = binary
-  vim.notify("[md-preview] インストール完了: " .. binary, vim.log.levels.INFO)
-  return true
+  if not M._download(url, archive) then return false end
+
+  -- 解凍
+  if fname:match("%.tar%.xz$") then
+    vim.fn.system(string.format('tar -xJf "%s" -C "%s" --strip-components=1', archive, install_dir))
+  else
+    vim.fn.system(string.format('unzip -jo "%s" "*/typst%s" -d "%s"', archive, ext, install_dir))
+  end
+  vim.fn.delete(archive)
+
+  if vim.fn.executable(typst) == 1 then
+    if not is_win then vim.fn.system('chmod +x "' .. typst .. '"') end
+    return true
+  end
+  return false
 end
 
 --- cargo を使ってソースからビルドする（リリースバイナリがない場合のフォールバック）
