@@ -32,5 +32,8 @@ async-trait = "0.1"
 tokio-util = { version = "0.7", features = ["codec"] }
 
 [profile.release]
-opt-level = 3
-lto = true
+opt-level = "z"      # サイズ最優先（"s" より小さい）
+lto = "fat"          # リンク時最適化（最大限）
+codegen-units = 1    # 並列コンパイルを無効にしてより細かく最適化
+strip = true         # デバッグシンボルを除去
+panic = "abort"      # unwind テーブルを除去（数百KB削減）

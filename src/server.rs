@@ -1,11 +1,11 @@
-// JS ライブラリをバイナリに埋め込む（download-libs.sh を先に実行すること）
-static HLJS_JS:         &[u8] = include_bytes!("embedded_lib/highlight.min.js");
-static HLJS_DARK_CSS:   &[u8] = include_bytes!("embedded_lib/hljs-dark.min.css");
-static HLJS_LIGHT_CSS:  &[u8] = include_bytes!("embedded_lib/hljs-light.min.css");
-static MERMAID_JS:      &[u8] = include_bytes!("embedded_lib/mermaid.min.js");
-static KATEX_JS:        &[u8] = include_bytes!("embedded_lib/katex.min.js");
-static KATEX_CSS:       &[u8] = include_bytes!("embedded_lib/katex.min.css");
-static AUTO_RENDER_JS:  &[u8] = include_bytes!("embedded_lib/auto-render.min.js");
+// JS/CSS ライブラリを gzip 圧縮して埋め込む（ブラウザに Content-Encoding: gzip で返す）
+static HLJS_JS:         &[u8] = include_bytes!("embedded_lib/highlight.min.js.gz");
+static HLJS_DARK_CSS:   &[u8] = include_bytes!("embedded_lib/hljs-dark.min.css.gz");
+static HLJS_LIGHT_CSS:  &[u8] = include_bytes!("embedded_lib/hljs-light.min.css.gz");
+static MERMAID_JS:      &[u8] = include_bytes!("embedded_lib/mermaid.min.js.gz");
+static KATEX_JS:        &[u8] = include_bytes!("embedded_lib/katex.min.js.gz");
+static KATEX_CSS:       &[u8] = include_bytes!("embedded_lib/katex.min.css.gz");
+static AUTO_RENDER_JS:  &[u8] = include_bytes!("embedded_lib/auto-render.min.js.gz");
 
 // KaTeX フォント（woff2）を埋め込む
 macro_rules! font {
@@ -104,10 +104,22 @@ pub async fn start_server(port: u16, state: Arc<AppState>) {
 }
 
 fn js_response(data: &'static [u8]) -> impl IntoResponse {
-    ([(header::CONTENT_TYPE, "application/javascript; charset=utf-8")], data)
+    (
+        [
+            (header::CONTENT_TYPE, "application/javascript; charset=utf-8"),
+            (header::CONTENT_ENCODING, "gzip"),
+        ],
+        data,
+    )
 }
 fn css_response(data: &'static [u8]) -> impl IntoResponse {
-    ([(header::CONTENT_TYPE, "text/css; charset=utf-8")], data)
+    (
+        [
+            (header::CONTENT_TYPE, "text/css; charset=utf-8"),
+            (header::CONTENT_ENCODING, "gzip"),
+        ],
+        data,
+    )
 }
 
 /// KaTeX フォント（/lib/fonts/:name.woff2）

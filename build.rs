@@ -3,13 +3,13 @@ use std::path::Path;
 
 fn main() {
     let required = [
-        "src/embedded_lib/highlight.min.js",
-        "src/embedded_lib/hljs-dark.min.css",
-        "src/embedded_lib/hljs-light.min.css",
-        "src/embedded_lib/mermaid.min.js",
-        "src/embedded_lib/katex.min.js",
-        "src/embedded_lib/katex.min.css",
-        "src/embedded_lib/auto-render.min.js",
+        "src/embedded_lib/highlight.min.js.gz",
+        "src/embedded_lib/hljs-dark.min.css.gz",
+        "src/embedded_lib/hljs-light.min.css.gz",
+        "src/embedded_lib/mermaid.min.js.gz",
+        "src/embedded_lib/katex.min.js.gz",
+        "src/embedded_lib/katex.min.css.gz",
+        "src/embedded_lib/auto-render.min.js.gz",
     ];
 
     for file in &required {
