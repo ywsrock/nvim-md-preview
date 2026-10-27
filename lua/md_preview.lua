@@ -50,7 +50,8 @@ local function send_update(buf)
   local content  = get_buf_content(buf)
   local title    = get_buf_title(buf)
   local base_dir = get_buf_dir(buf)
-  vim.rpcnotify(state.chan_id, "md_preview_update", content, title, base_dir)
+  -- chan_id が無効になっている場合（バイナリ終了後）はエラーを無視
+  pcall(vim.rpcnotify, state.chan_id, "md_preview_update", content, title, base_dir)
 end
 
 --- Rust バイナリにカーソル行を送る（スクロール同期）
@@ -58,7 +59,8 @@ local function send_scroll(buf)
   if state.chan_id == nil then return end
   local line  = vim.api.nvim_win_get_cursor(0)[1]
   local total = vim.api.nvim_buf_line_count(buf)
-  vim.rpcnotify(state.chan_id, "md_preview_scroll", line, total)
+  -- chan_id が無効になっている場合（バイナリ終了後）はエラーを無視
+  pcall(vim.rpcnotify, state.chan_id, "md_preview_scroll", line, total)
 end
 
 --- バッファの変更イベントを購読する
@@ -118,9 +120,14 @@ local function start_binary()
       )
       state.job_id = nil
       state.chan_id = nil
+      -- バッファに登録したオートコマンド（スクロール同期）を削除
+      if state.buf_id ~= nil then
+        local ok, _ = pcall(vim.api.nvim_del_augroup_by_name, "md_preview_scroll_" .. state.buf_id)
+        if not ok then end  -- 存在しない場合は無視
+        state.buf_id = nil
+      end
     end,
     on_stderr = function(_, data, _)
-      -- Rust の eprintln! 出力をデバッグログに表示
       for _, line in ipairs(data) do
         if line ~= "" then
           vim.notify("[md-preview] " .. line, vim.log.levels.DEBUG)
@@ -188,7 +195,8 @@ function M.stop()
     state.chan_id = nil
   end
   if state.buf_id ~= nil then
-    vim.api.nvim_buf_detach(state.buf_id)
+    -- スクロール同期オートコマンドを削除
+    pcall(vim.api.nvim_del_augroup_by_name, "md_preview_scroll_" .. state.buf_id)
     state.buf_id = nil
   end
   vim.notify("[md-preview] プレビュー停止", vim.log.levels.INFO)
