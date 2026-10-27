@@ -17,28 +17,24 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact: nvim-md-preview
-            pandoc_url: https://github.com/jgm/pandoc/releases/latest/download/pandoc-linux-amd64.tar.gz
             pandoc_bin: pandoc-linux
             typst_url: https://github.com/typst/typst/releases/latest/download/typst-x86_64-unknown-linux-musl.tar.xz
             typst_bin: typst-linux
           - os: macos-latest
             target: x86_64-apple-darwin
             artifact: nvim-md-preview
-            pandoc_url: https://github.com/jgm/pandoc/releases/latest/download/pandoc-x86_64-macOS.zip
             pandoc_bin: pandoc-macos-x86_64
             typst_url: https://github.com/typst/typst/releases/latest/download/typst-x86_64-apple-darwin.tar.xz
             typst_bin: typst-macos-x86_64
           - os: macos-latest
             target: aarch64-apple-darwin
             artifact: nvim-md-preview
-            pandoc_url: https://github.com/jgm/pandoc/releases/latest/download/pandoc-arm64-macOS.zip
             pandoc_bin: pandoc-macos-arm64
             typst_url: https://github.com/typst/typst/releases/latest/download/typst-aarch64-apple-darwin.tar.xz
             typst_bin: typst-macos-arm64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact: nvim-md-preview.exe
-            pandoc_url: https://github.com/jgm/pandoc/releases/latest/download/pandoc-windows-x86_64.zip
             pandoc_bin: pandoc-windows.exe
             typst_url: https://github.com/typst/typst/releases/latest/download/typst-x86_64-pc-windows-msvc.zip
             typst_bin: typst-windows.exe
@@ -117,15 +113,26 @@ jobs:
       - name: Extract pandoc (Linux)
         if: runner.os == 'Linux'
         run: |
-          curl -fsSL -o pandoc.tar.gz "${{ matrix.pandoc_url }}"
+          VER=$(curl -sL https://api.github.com/repos/jgm/pandoc/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+          curl -fsSL -o pandoc.tar.gz "https://github.com/jgm/pandoc/releases/download/${VER}/pandoc-${VER}-linux-amd64.tar.gz"
           tar -xzf pandoc.tar.gz --wildcards "*/bin/pandoc" --strip-components=2
           mv pandoc ${{ matrix.pandoc_bin }}
           chmod +x ${{ matrix.pandoc_bin }}
 
-      - name: Extract pandoc (macOS)
-        if: runner.os == 'macOS'
+      - name: Extract pandoc (macOS x86_64)
+        if: matrix.target == 'x86_64-apple-darwin'
         run: |
-          curl -fsSL -o pandoc.zip "${{ matrix.pandoc_url }}"
+          VER=$(curl -sL https://api.github.com/repos/jgm/pandoc/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+          curl -fsSL -o pandoc.zip "https://github.com/jgm/pandoc/releases/download/${VER}/pandoc-${VER}-x86_64-macOS.zip"
+          unzip -jo pandoc.zip "*/bin/pandoc" -d .
+          mv pandoc ${{ matrix.pandoc_bin }}
+          chmod +x ${{ matrix.pandoc_bin }}
+
+      - name: Extract pandoc (macOS arm64)
+        if: matrix.target == 'aarch64-apple-darwin'
+        run: |
+          VER=$(curl -sL https://api.github.com/repos/jgm/pandoc/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+          curl -fsSL -o pandoc.zip "https://github.com/jgm/pandoc/releases/download/${VER}/pandoc-${VER}-arm64-macOS.zip"
           unzip -jo pandoc.zip "*/bin/pandoc" -d .
           mv pandoc ${{ matrix.pandoc_bin }}
           chmod +x ${{ matrix.pandoc_bin }}
