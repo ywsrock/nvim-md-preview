@@ -31,7 +31,7 @@ Neovim 用 Markdown プレビュープラグイン。Rust 製のローカル HTT
 
 ## インストール
 
-### Vundle（markdown-preview.nvim と同様の方式）
+### Vundle
 
 `~/.config/nvim/plugin/plugins.vim` に追加:
 
@@ -39,7 +39,7 @@ Neovim 用 Markdown プレビュープラグイン。Rust 製のローカル HTT
 Plugin 'ywsrock/nvim-md-preview'
 ```
 
-`:PluginInstall` 後に Vim 内で実行:
+`:PluginInstall` 後に実行:
 
 ```vim
 :MdPreviewInstall
@@ -88,7 +88,7 @@ use {
 Markdown ファイルを開いて:
 
 ```vim
-:MarkdownPreview        " プレビュー開始（markdown-preview.nvim と同じコマンド名）
+:MarkdownPreview        " プレビュー開始
 :MarkdownPreviewStop    " プレビュー停止
 :MarkdownPreviewToggle  " 開始/停止トグル
 
@@ -111,10 +111,9 @@ require("md_preview").setup({
 })
 ```
 
-### Vimscript (init.vim) — グローバル変数
+### Vimscript (init.vim)
 
 ```vim
-" markdown-preview.nvim と同様にグローバル変数でも設定可能
 let g:md_preview_port      = 9876   " ポート番号
 let g:md_preview_auto_open = 1      " 自動でブラウザを開く（0 で無効）
 ```
@@ -199,3 +198,12 @@ lua require("md_preview").setup({
 ## ライセンス
 
 MIT
+
+---
+
+## 備考
+
+本プラグインの開発にあたり、以下のプラグインを参考にしました。
+
+- [selimacerbas/mdkite.nvim](https://github.com/selimacerbas/mdkite.nvim) — プレビュー画面のスタイル・Mermaid レンダリング・テーマ設計を参考にしました。
+- [iamcco/markdown-preview.nvim](https://github.com/iamcco/markdown-preview.nvim) — インストール方式・コマンド設計・設定インターフェースを参考にしました。
