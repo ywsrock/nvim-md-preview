@@ -47,7 +47,6 @@ use axum::{
 use serde::Deserialize;
 use std::{path::{Path, PathBuf}, sync::Arc};
 use tokio::sync::{broadcast, mpsc, RwLock};
-use tower_http::cors::CorsLayer;
 
 pub type HtmlSender = broadcast::Sender<String>;
 /// Neovim へ送る通知 (method, params)
@@ -76,6 +75,19 @@ pub struct AppState {
     pub theme: Arc<RwLock<String>>,
     /// ユーザー CSS（/custom.css で配信）
     pub custom_css: Arc<RwLock<String>>,
+    /// アクセス制御（起動時に決まり、以後変わらない）
+    pub access: Access,
+    /// 最新の差分表示メッセージ（後から接続したブラウザにも送る）
+    pub latest_diff: Arc<RwLock<Option<String>>>,
+}
+
+/// サーバーへのアクセス制御
+#[derive(Clone, Debug, Default)]
+pub struct Access {
+    /// LAN に公開している（0.0.0.0 などに bind）。false なら localhost 以外の Host を拒否する
+    pub lan: bool,
+    /// 設定されていれば全リクエストに必要（?token= か Cookie）
+    pub token: Option<String>,
 }
 
 /// エクスポート設定（PDF は Typst、それ以外は pandoc に反映する）
@@ -112,7 +124,7 @@ impl Default for ExportOptions {
 }
 
 impl AppState {
-    pub fn new(tx: HtmlSender, nvim_tx: mpsc::UnboundedSender<NvimNotify>) -> Self {
+    pub fn new(tx: HtmlSender, nvim_tx: mpsc::UnboundedSender<NvimNotify>, access: Access) -> Self {
         Self {
             tx,
             latest_html: Arc::new(RwLock::new(None)),
@@ -126,6 +138,8 @@ impl AppState {
             export_opts: Arc::new(RwLock::new(ExportOptions::default())),
             theme: Arc::new(RwLock::new("auto".to_string())),
             custom_css: Arc::new(RwLock::new(String::new())),
+            access,
+            latest_diff: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -144,8 +158,8 @@ impl AppState {
     }
 }
 
-pub async fn start_server(port: u16, state: Arc<AppState>) {
-    let listener = find_listener(port).await;
+pub async fn start_server(host: &str, port: u16, state: Arc<AppState>) {
+    let listener = find_listener(host, port).await;
     let bound_port = listener.local_addr().unwrap().port();
 
     let app = Router::new()
@@ -163,7 +177,7 @@ pub async fn start_server(port: u16, state: Arc<AppState>) {
         .route("/lib/katex.min.css",       get(|| async { css_response(KATEX_CSS) }))
         .route("/lib/auto-render.min.js",  get(|| async { js_response(AUTO_RENDER_JS) }))
         .route("/lib/fonts/:name",         get(katex_font_handler))
-        .layer(CorsLayer::permissive())
+        .layer(axum::middleware::from_fn_with_state(Arc::clone(&state), access_guard))
         .with_state(state);
 
     eprintln!("READY:{}", bound_port);
@@ -171,18 +185,84 @@ pub async fn start_server(port: u16, state: Arc<AppState>) {
 }
 
 /// 指定ポートから順に空きポートを探す
-async fn find_listener(start_port: u16) -> tokio::net::TcpListener {
+async fn find_listener(host: &str, start_port: u16) -> tokio::net::TcpListener {
     for port in start_port..start_port.saturating_add(10) {
-        let addr = format!("127.0.0.1:{}", port);
+        let addr = format!("{}:{}", host, port);
         match tokio::net::TcpListener::bind(&addr).await {
             Ok(l) => return l,
             Err(_) => continue,
         }
     }
     // 0 を指定するとOSが空きポートを自動割り当て
-    tokio::net::TcpListener::bind("127.0.0.1:0")
+    tokio::net::TcpListener::bind(format!("{}:0", host))
         .await
         .expect("Failed to bind any port")
+}
+
+const TOKEN_COOKIE: &str = "mdp_token";
+
+/// "host:port" / "[::1]:port" からホスト名部分を取り出す
+fn host_name(host_header: &str) -> &str {
+    if let Some(rest) = host_header.strip_prefix('[') {
+        return rest.split(']').next().unwrap_or("");
+    }
+    host_header.rsplit_once(':').map(|(h, _)| h).unwrap_or(host_header)
+}
+
+fn is_loopback_name(name: &str) -> bool {
+    matches!(name, "127.0.0.1" | "localhost" | "::1")
+}
+
+/// 全リクエストの入口でのアクセス制御
+/// - localhost 公開時は Host が localhost 系であること（DNS rebinding 対策）
+/// - Origin 付きのリクエスト（fetch / WebSocket）は同一オリジンであること（他サイトからの操作を拒否）
+/// - トークンがあれば ?token= か Cookie で一致すること。?token= で来たら Cookie を発行する
+async fn access_guard(
+    State(state): State<Arc<AppState>>,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let headers = req.headers();
+    let host = headers.get(header::HOST).and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+
+    if !state.access.lan && !is_loopback_name(host_name(&host)) {
+        return (StatusCode::FORBIDDEN, "forbidden host").into_response();
+    }
+    if let Some(origin) = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()) {
+        let origin_host = origin.split_once("://").map(|(_, h)| h).unwrap_or("");
+        if origin_host != host {
+            return (StatusCode::FORBIDDEN, "cross-origin request").into_response();
+        }
+    }
+
+    let mut set_cookie = None;
+    if let Some(token) = &state.access.token {
+        let from_query = req.uri().query().and_then(|q| {
+            q.split('&').find_map(|kv| kv.strip_prefix("token=")).map(str::to_string)
+        });
+        let from_cookie = headers.get(header::COOKIE).and_then(|v| v.to_str().ok()).and_then(|c| {
+            c.split(';').find_map(|kv| kv.trim().strip_prefix(&format!("{}=", TOKEN_COOKIE)).map(str::to_string))
+        });
+        let ok = from_cookie.as_deref() == Some(token.as_str()) || from_query.as_deref() == Some(token.as_str());
+        if !ok {
+            return (
+                StatusCode::UNAUTHORIZED,
+                [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+                "トークンが必要です。Neovim に表示された URL（?token= 付き）を開いてください。",
+            ).into_response();
+        }
+        if from_query.as_deref() == Some(token.as_str()) {
+            set_cookie = Some(format!("{}={}; Path=/; HttpOnly; SameSite=Strict", TOKEN_COOKIE, token));
+        }
+    }
+
+    let mut res = next.run(req).await;
+    if let Some(c) = set_cookie {
+        if let Ok(v) = header::HeaderValue::from_str(&c) {
+            res.headers_mut().insert(header::SET_COOKIE, v);
+        }
+    }
+    res
 }
 
 fn js_response(data: &'static [u8]) -> impl IntoResponse {
@@ -231,6 +311,12 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
     {
         let latest = state.latest_html.read().await;
         if let Some(payload) = latest.as_ref() {
+            if socket.send(Message::Text(payload.clone())).await.is_err() {
+                return;
+            }
+        }
+        let diff = state.latest_diff.read().await;
+        if let Some(payload) = diff.as_ref() {
             if socket.send(Message::Text(payload.clone())).await.is_err() {
                 return;
             }
@@ -314,12 +400,25 @@ async fn assets_handler(
     State(state): State<Arc<AppState>>,
 ) -> Response {
     // パストラバーサル防止を最初にチェック（base_dir の有無より先）
-    if params.p.contains("..") { return StatusCode::FORBIDDEN.into_response(); }
+    // 絶対パス・ドライブ指定・".." を含むものは拒否する（Path::join は絶対パスで置き換わるため）
+    let rel = Path::new(&params.p);
+    if params.p.contains("..")
+        || rel.components().any(|c| !matches!(c, std::path::Component::Normal(_) | std::path::Component::CurDir))
+    {
+        return StatusCode::FORBIDDEN.into_response();
+    }
 
     let base_dir = state.base_dir.read().await;
     let Some(dir) = base_dir.as_ref() else { return StatusCode::NOT_FOUND.into_response(); };
-    let path = dir.join(&params.p);
-    match tokio::fs::read(&path).await {
+    let path = dir.join(rel);
+    // シンボリックリンクで外に出ていないか、実体のパスで確認する
+    let (Ok(real), Ok(real_dir)) = (tokio::fs::canonicalize(&path).await, tokio::fs::canonicalize(dir).await) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if !real.starts_with(&real_dir) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    match tokio::fs::read(&real).await {
         Ok(data) => {
             let mime = mime_from_ext(&path);
             ([(header::CONTENT_TYPE, mime)], data).into_response()
@@ -865,6 +964,36 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
     #searchCount{font-size:.75rem;color:var(--fg-muted);min-width:3.5em;text-align:center}
     mark.search-hit{background:rgba(250,204,21,.35);color:inherit;border-radius:2px}
     mark.search-hit.current{background:rgba(250,204,21,.85);color:#000}
+    /* Git 差分（HEAD からの変更）: 左端のバー */
+    #content .diff-add{box-shadow:-14px 0 0 -11px #3fb950}
+    #content .diff-mod{box-shadow:-14px 0 0 -11px #d29922}
+    #content .diff-del{box-shadow:-14px 2px 0 -11px #f85149}
+    /* プレゼンモード */
+    #slides{position:fixed;inset:0;z-index:40;background:var(--bg);display:flex;flex-direction:column}
+    #slides[hidden]{display:none}
+    #slideStage{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:3vh 6vw}
+    #slideBody{width:min(1100px,100%);max-height:100%;overflow:auto;font-size:clamp(16px,2.2vw,30px)}
+    #slideBody h1{font-size:2.2em;border:none}
+    #slideBody h2{font-size:1.7em;border:none}
+    #slideBody img,#slideBody svg{max-height:60vh}
+    #slideBar{display:flex;align-items:center;gap:.6rem;padding:.5rem 1rem;color:var(--fg-muted);font-size:.8rem}
+    #slideProgress{flex:1;height:3px;background:var(--stroke);border-radius:2px;overflow:hidden}
+    #slideProgress>div{height:100%;background:var(--accent);transition:width .2s}
+    /* 印刷プレビュー: A4 幅の紙と改ページの目安線 */
+    body.print-preview{background:#e5e7eb}
+    body.print-preview #content{width:210mm;max-width:100%;min-height:297mm;padding:20mm;margin:1.5rem auto;
+      background:#fff;color:#1f2328;box-shadow:0 2px 12px rgba(0,0,0,.2);
+      background-image:repeating-linear-gradient(to bottom,transparent 0,transparent calc(297mm - 1px),#f85149 calc(297mm - 1px),#f85149 297mm)}
+    body.print-preview #toc{display:none}
+    @media print{
+      header,#toc,#searchBar,#slides,#overlay,#fm-panel,.copy-btn,.mermaid-expand-btn,.anchor-link,#fn-pop{display:none!important}
+      html,body{background:#fff!important;height:auto}
+      #content{max-width:none!important;width:auto!important;margin:0!important;padding:0!important;
+        box-shadow:none!important;background:none!important;animation:none}
+      #content pre,#content table,#content .mermaid-block,#content img,#content blockquote{break-inside:avoid}
+      #content h1,#content h2,#content h3{break-after:avoid}
+      #content .diff-add,#content .diff-mod,#content .diff-del{box-shadow:none}
+    }
     /* 見出しアンカーリンク */
     #content .anchor-link{opacity:0;margin-left:.4em;font-size:.8em;
       color:var(--fg-muted);text-decoration:none;transition:opacity .15s}
@@ -893,6 +1022,12 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="m20 20-3.5-3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
     </button>
     <div id="statusDot" class="status-dot" title="Disconnected"></div>
+    <button id="slidesBtn" class="btn" title="プレゼンモード (p)">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="12" rx="1.5" stroke="currentColor" stroke-width="2"/><path d="M12 16v4M8 20h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+    <button id="printBtn" class="btn" title="印刷プレビュー（もう一度押すと印刷）">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M6 9V3h12v6M6 18H4a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-2M6 14h12v7H6z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+    </button>
     <button id="themeBtn" class="btn" title="Toggle light/dark">
       <svg id="themeIcon" width="16" height="16" viewBox="0 0 24 24" fill="none">
         <path id="moonPath" d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -924,6 +1059,14 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
   </div>
 
   <nav id="toc" aria-label="目次"></nav>
+  <div id="slides" hidden>
+    <div id="slideStage"><div id="slideBody"></div></div>
+    <div id="slideBar">
+      <span id="slideNum"></span>
+      <div id="slideProgress"><div></div></div>
+      <span>← → で移動・Esc で終了・f で全画面</span>
+    </div>
+  </div>
   <div id="searchBar" hidden>
     <input id="searchInput" type="search" placeholder="検索…" autocomplete="off">
     <span id="searchCount"></span>
@@ -1155,6 +1298,8 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       contentEl.style.display = '';
 
       buildToc();
+      applyDiff();
+      if (!slidesEl.hidden) { buildSlides(); showSlide(slideIdx); }
       // 検索中なら新しい内容で検索し直す
       if (!searchBar.hidden && searchInput.value) runSearch();
       await renderAllMermaid();
@@ -1507,8 +1652,14 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
 
         // スクロール同期メッセージ
         if (data.type === 'scroll') {
+          if (!slidesEl.hidden) { const i = slideForLine(data.line); if (i !== slideIdx) showSlide(i); return; }
           if (rendering) pendingScroll = { line: data.line, total: data.total };
           else scrollToLine(data.line, data.total);
+          return;
+        }
+        if (data.type === 'diff') {
+          lastDiff = data.ranges || [];
+          if (!rendering) applyDiff();
           return;
         }
 
@@ -1683,6 +1834,118 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       e.stopPropagation();
       if (wsConn && wsConn.readyState === WebSocket.OPEN) wsConn.send(JSON.stringify({ type: 'open', path }));
     }, true);
+
+    // ── Git 差分の表示 ────────────────────────────────────────────
+    let lastDiff = [];
+    // 各行マーカーが受け持つブロック要素と行範囲を返す
+    function markerBlocks() {
+      const ms = Array.from(contentEl.querySelectorAll('.src-line'));
+      return ms.map((m, i) => {
+        const start = +m.dataset.line;
+        const next = ms.slice(i + 1).find(n => +n.dataset.line > start);
+        const end = next ? +next.dataset.line - 1 : Infinity;
+        // <li>/<blockquote> の中のマーカーは親が、それ以外は直後の要素がブロック
+        const parent = m.parentElement;
+        const el = parent !== contentEl && m === parent.firstElementChild ? parent : m.nextElementSibling;
+        return { el, start, end };
+      }).filter(b => b.el && b.el !== contentEl);
+    }
+    function applyDiff() {
+      contentEl.querySelectorAll('.diff-add,.diff-mod,.diff-del').forEach(e => e.classList.remove('diff-add', 'diff-mod', 'diff-del'));
+      if (!lastDiff.length) return;
+      const blocks = markerBlocks();
+      for (const [s, e, kind] of lastDiff) {
+        for (const b of blocks) {
+          const hit = kind === 'del' ? (s >= b.start && s <= b.end) : (s <= b.end && e >= b.start);
+          if (!hit || b.el.classList.contains('diff-mod')) continue;
+          const cls = 'diff-' + kind;
+          const other = ['diff-add', 'diff-del'].find(c => c !== cls && b.el.classList.contains(c));
+          // 同じブロックに追加と削除が両方あれば「変更」として表示する
+          if (other) { b.el.classList.remove(other); b.el.classList.add('diff-mod'); }
+          else b.el.classList.add(cls);
+        }
+      }
+      // 入れ子（<ul> と <li> など）は一番内側だけに印を残す
+      const marked = contentEl.querySelectorAll('.diff-add,.diff-mod,.diff-del');
+      marked.forEach(el => {
+        if (el.querySelector('.diff-add,.diff-mod,.diff-del')) el.classList.remove('diff-add', 'diff-mod', 'diff-del');
+      });
+    }
+
+    // ── プレゼンモード ────────────────────────────────────────────
+    // --- （<hr>）でスライドを区切る。<hr> が無ければ h1/h2 ごとに区切る
+    const slidesEl = $('slides'), slideBody = $('slideBody');
+    let slides = [], slideIdx = 0;
+    function buildSlides() {
+      const kids = Array.from(contentEl.children);
+      const useHr = kids.some(k => k.tagName === 'HR');
+      slides = [[]];
+      for (const k of kids) {
+        if (useHr && k.tagName === 'HR') { slides.push([]); continue; }
+        if (!useHr && /^H[12]$/.test(k.tagName) && slides[slides.length - 1].some(n => !n.classList.contains('src-line'))) slides.push([]);
+        slides[slides.length - 1].push(k);
+      }
+      slides = slides.filter(sl => sl.some(n => !n.classList.contains('src-line')));
+      if (!slides.length) slides = [[]];
+      slideIdx = Math.min(slideIdx, slides.length - 1);
+    }
+    function showSlide(i) {
+      slideIdx = Math.max(0, Math.min(slides.length - 1, i));
+      slideBody.innerHTML = '';
+      for (const n of slides[slideIdx]) slideBody.appendChild(n.cloneNode(true));
+      slideBody.scrollTop = 0;
+      $('slideNum').textContent = `${slideIdx + 1} / ${slides.length}`;
+      $('slideProgress').firstElementChild.style.width = ((slideIdx + 1) / slides.length * 100) + '%';
+    }
+    function openSlides() { buildSlides(); slidesEl.hidden = false; showSlide(slideIdx); }
+    function closeSlides() {
+      slidesEl.hidden = true;
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    }
+    // カーソル行を含むスライドに移動する（エディタとの同期）
+    function slideForLine(line) {
+      let best = 0;
+      slides.forEach((sl, i) => {
+        const first = sl.find(n => n.classList.contains('src-line')) || sl[0]?.querySelector?.('.src-line');
+        if (first && +first.dataset.line <= line) best = i;
+      });
+      return best;
+    }
+    $('slidesBtn').addEventListener('click', openSlides);
+    slidesEl.addEventListener('click', e => { if (!e.target.closest('a,button')) showSlide(slideIdx + 1); });
+    document.addEventListener('keydown', e => {
+      if (slidesEl.hidden) return;
+      const k = e.key;
+      if (['ArrowRight', 'ArrowDown', 'PageDown', ' ', 'Enter'].includes(k)) showSlide(slideIdx + 1);
+      else if (['ArrowLeft', 'ArrowUp', 'PageUp', 'Backspace'].includes(k)) showSlide(slideIdx - 1);
+      else if (k === 'Home') showSlide(0);
+      else if (k === 'End') showSlide(slides.length - 1);
+      else if (k === 'Escape') closeSlides();
+      else if (k === 'f') { slidesEl.requestFullscreen?.().catch(() => {}); }
+      else return;
+      e.preventDefault(); e.stopImmediatePropagation();
+    }, true);
+
+    // ── 印刷プレビュー ────────────────────────────────────────────
+    $('printBtn').addEventListener('click', () => {
+      // 1 回目: 紙面表示に切り替え / 2 回目: 印刷ダイアログ
+      if (document.body.classList.contains('print-preview')) window.print();
+      else document.body.classList.add('print-preview');
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && document.body.classList.contains('print-preview') && slidesEl.hidden) {
+        document.body.classList.remove('print-preview');
+      }
+      const typing = e.target.closest?.('input,textarea');
+      if (e.key === 'p' && !typing && !e.ctrlKey && !e.metaKey && slidesEl.hidden) { e.preventDefault(); openSlides(); }
+    });
+    // 印刷時は折りたたみを開き、印刷後に戻す
+    let closedDetails = [];
+    window.addEventListener('beforeprint', () => {
+      closedDetails = Array.from(contentEl.querySelectorAll('details:not([open])'));
+      closedDetails.forEach(d => d.open = true);
+    });
+    window.addEventListener('afterprint', () => { closedDetails.forEach(d => d.open = false); closedDetails = []; });
 
     connect();
 

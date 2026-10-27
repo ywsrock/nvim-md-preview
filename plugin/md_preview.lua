@@ -64,6 +64,11 @@ end, {
   end,
 })
 
+vim.api.nvim_create_user_command("MdPreviewDiff", function()
+  local m = ensure_setup()
+  if m then m.toggle_diff() end
+end, { desc = "Git の HEAD からの変更をプレビューに表示する/しない" })
+
 vim.api.nvim_create_user_command("MdPreviewInstall", function()
   local ok, m = pcall(require, "md_preview")
   if ok then m.install() end
