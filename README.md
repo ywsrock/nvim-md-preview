@@ -219,6 +219,7 @@ require("md_preview").setup({
   port = 9876,            -- the next free port is used if this one is taken
   host = "127.0.0.1",     -- "0.0.0.0" to view from other devices on your LAN (a token is required automatically)
   auto_open = true,       -- open the browser when the preview starts
+  lang = "auto",          -- language of messages and the preview page: "auto" (Japanese if your locale is Japanese, otherwise English) | "en" | "ja"
   scroll_sync = true,     -- scroll the preview with the cursor
   follow_buffer = true,   -- switch the preview when you enter another Markdown buffer
   debounce_ms = 80,       -- wait this long after typing before updating

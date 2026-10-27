@@ -49,6 +49,22 @@ use std::{path::{Path, PathBuf}, sync::Arc};
 use tokio::sync::{broadcast, mpsc, RwLock};
 
 pub type HtmlSender = broadcast::Sender<String>;
+
+/// メッセージの言語（Neovim の lang 設定から決まる）。true なら日本語
+static LANG_JA: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn set_lang(lang: &str) {
+    LANG_JA.store(lang == "ja", std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn lang() -> &'static str {
+    if LANG_JA.load(std::sync::atomic::Ordering::Relaxed) { "ja" } else { "en" }
+}
+
+/// 言語に合った文を返す
+pub fn tr<'a>(en: &'a str, ja: &'a str) -> &'a str {
+    if LANG_JA.load(std::sync::atomic::Ordering::Relaxed) { ja } else { en }
+}
 /// Neovim へ送る通知 (method, params)
 pub type NvimNotify = (String, Vec<rmpv::Value>);
 
@@ -251,7 +267,8 @@ async fn access_guard(
             return (
                 StatusCode::UNAUTHORIZED,
                 [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
-                "トークンが必要です。Neovim に表示された URL（?token= 付き）を開いてください。",
+                tr("A token is required. Open the URL with ?token= shown in Neovim.",
+                   "トークンが必要です。Neovim に表示された URL（?token= 付き）を開いてください。"),
             ).into_response();
         }
         if from_query.as_deref() == Some(token.as_str()) {
@@ -299,7 +316,8 @@ async fn katex_font_handler(AxumPath(name): AxumPath<String>) -> Response {
 
 /// プレビューページの HTML を返す
 async fn preview_page() -> impl IntoResponse {
-    Html(PREVIEW_HTML)
+    // 画面の言語は <html lang> で JS に伝える（Neovim の lang 設定）
+    Html(PREVIEW_HTML.replacen(r#"<html lang="ja""#, &format!(r#"<html lang="{}""#, lang()), 1))
 }
 
 /// WebSocket アップグレードハンドラ
@@ -474,12 +492,13 @@ fn mime_for_format(filename: &str) -> &'static str {
 /// HTTP (/export) と RPC (:MdPreviewExport) の両方から使う
 pub async fn export_bytes(state: &AppState, format: &str) -> Result<(Vec<u8>, String), String> {
     let Some(ext) = extension_for(format) else {
-        return Err(format!("未対応の形式: {}", format));
+        return Err(format!("{}: {}", tr("Unsupported format", "未対応の形式"), format));
     };
 
     // プレビュー中の内容（未保存分も含む）を使う
     let content = state.current_content.read().await.clone()
-        .ok_or_else(|| "ファイルが開かれていません。:MdPreview でプレビューを開始してください。".to_string())?;
+        .ok_or_else(|| tr("No file is open. Start the preview with :MdPreview.",
+            "ファイルが開かれていません。:MdPreview でプレビューを開始してください。").to_string())?;
     let current_file = state.current_file.read().await.clone();
     let base_dir = state.base_dir.read().await.clone();
     let stem = current_file.as_ref()
@@ -495,9 +514,11 @@ pub async fn export_bytes(state: &AppState, format: &str) -> Result<(Vec<u8>, St
 
     // 変換ツールにはファイルで渡す。同時実行で衝突しないよう一意な名前にする
     let work = std::env::temp_dir().join(format!("nvim-md-preview-{}-{}", std::process::id(), unique_id()));
-    tokio::fs::create_dir_all(&work).await.map_err(|e| format!("一時ディレクトリの作成に失敗: {}", e))?;
+    tokio::fs::create_dir_all(&work).await
+        .map_err(|e| format!("{}: {}", tr("Failed to create a temporary directory", "一時ディレクトリの作成に失敗"), e))?;
     let md_tmp = work.join("input.md");
-    tokio::fs::write(&md_tmp, &content).await.map_err(|e| format!("一時ファイルの作成に失敗: {}", e))?;
+    tokio::fs::write(&md_tmp, &content).await
+        .map_err(|e| format!("{}: {}", tr("Failed to create a temporary file", "一時ファイルの作成に失敗"), e))?;
 
     let result = if ext == "pdf" {
         let typst = state.typst_path.read().await;
@@ -558,17 +579,22 @@ async fn convert_with_pandoc(
         .args(&args)
         .output()
         .await
-        .map_err(|e| format!("pandoc が見つかりません。:MdPreviewInstall でインストールしてください。\n\nエラー: {}", e))?;
+        .map_err(|e| format!("{}\n\n{}: {}",
+            tr("pandoc was not found. Install it with :MdPreviewInstall.", "pandoc が見つかりません。:MdPreviewInstall でインストールしてください。"),
+            tr("Error", "エラー"), e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!(
-            "pandoc 変換に失敗しました。pandoc がインストールされているか確認してください。\n\
-             インストール: :MdPreviewInstall\n\nエラー: {}",
+            "{}\n\n{}: {}",
+            tr("pandoc failed to convert the document. Check that pandoc is installed (:MdPreviewInstall).",
+               "pandoc 変換に失敗しました。pandoc がインストールされているか確認してください（:MdPreviewInstall）。"),
+            tr("Error", "エラー"),
             truncate_chars(&stderr, 500)
         ));
     }
-    tokio::fs::read(&out_path).await.map_err(|_| "変換結果の読み込みに失敗しました。".to_string())
+    tokio::fs::read(&out_path).await
+        .map_err(|_| tr("Failed to read the converted file.", "変換結果の読み込みに失敗しました。").to_string())
 }
 
 /// Typst の文字列リテラルに埋め込めるようにエスケープする
@@ -647,7 +673,7 @@ async fn convert_with_typst(
 
     if let Some(tpl) = &opts.template {
         tokio::fs::copy(tpl, work.join("template.typ")).await
-            .map_err(|e| format!("テンプレートを読み込めません: {}\n{}", tpl.display(), e))?;
+            .map_err(|e| format!("{}: {}\n{}", tr("Cannot read the template", "テンプレートを読み込めません"), tpl.display(), e))?;
     }
 
     // 画像用の root は作業ディレクトリと同じ根（ドライブ）にある場合だけ設定する
@@ -658,7 +684,8 @@ async fn convert_with_typst(
     };
 
     let typ_content = build_typst_source(opts, image_prefix.as_deref());
-    tokio::fs::write(&typ_path, typ_content).await.map_err(|e| format!("一時ファイルの作成に失敗: {}", e))?;
+    tokio::fs::write(&typ_path, typ_content).await
+        .map_err(|e| format!("{}: {}", tr("Failed to create a temporary file", "一時ファイルの作成に失敗"), e))?;
 
     let mut args: Vec<String> = vec!["compile".into()];
     if let Some(root) = root {
@@ -672,16 +699,22 @@ async fn convert_with_typst(
         .args(&args)
         .output()
         .await
-        .map_err(|e| format!("Typst が見つかりません。:MdPreviewInstall でインストールしてください。\n\nエラー: {}", e))?;
+        .map_err(|e| format!("{}\n\n{}: {}",
+            tr("Typst was not found. Install it with :MdPreviewInstall.", "Typst が見つかりません。:MdPreviewInstall でインストールしてください。"),
+            tr("Error", "エラー"), e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!(
-            "Typst 変換に失敗しました。:MdPreviewInstall で Typst をインストールしてください。\n\nエラー: {}",
+            "{}\n\n{}: {}",
+            tr("Typst failed to convert the document. Install Typst with :MdPreviewInstall.",
+               "Typst 変換に失敗しました。:MdPreviewInstall で Typst をインストールしてください。"),
+            tr("Error", "エラー"),
             truncate_chars(&stderr, 500)
         ));
     }
-    tokio::fs::read(&pdf_path).await.map_err(|_| "PDF の読み込みに失敗しました。".to_string())
+    tokio::fs::read(&pdf_path).await
+        .map_err(|_| tr("Failed to read the PDF.", "PDF の読み込みに失敗しました。").to_string())
 }
 
 /// 文字境界を壊さずに先頭 max 文字を返す（バイト単位スライスは多バイト文字で panic する）
@@ -1067,24 +1100,24 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
         <path d="M7 15V9l2.5 3L12 9v6M16 12l2-3 2 3M16 12h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     </span>
-    <button id="tocBtn" class="btn" title="目次 (t)">
+    <button id="tocBtn" class="btn" data-tr-title="Table of contents (t)|目次 (t)">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h10M4 18h13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
     </button>
     <h1 id="title">md Preview</h1>
     <div id="diffNav" hidden>
-      <span id="diffLegend" title="+ 追加 / ~ 変更 / − 削除"><i class="lg lg-add">+</i><i class="lg lg-mod">~</i><i class="lg lg-del">−</i></span>
+      <span id="diffLegend" data-tr-title="+ added / ~ changed / − removed|+ 追加 / ~ 変更 / − 削除"><i class="lg lg-add">+</i><i class="lg lg-mod">~</i><i class="lg lg-del">−</i></span>
       <span id="diffSummary"></span>
-      <button id="diffPrev" class="btn" title="前の変更">↑</button>
-      <button id="diffNext" class="btn" title="次の変更">↓</button>
+      <button id="diffPrev" class="btn" data-tr-title="Previous change|前の変更">↑</button>
+      <button id="diffNext" class="btn" data-tr-title="Next change|次の変更">↓</button>
     </div>
-    <button id="searchBtn" class="btn" title="検索 (/ または Ctrl+F)">
+    <button id="searchBtn" class="btn" data-tr-title="Search (/ or Ctrl+F)|検索 (/ または Ctrl+F)">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="m20 20-3.5-3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
     </button>
     <div id="statusDot" class="status-dot" title="Disconnected"></div>
-    <button id="slidesBtn" class="btn" title="プレゼンモード (p)">
+    <button id="slidesBtn" class="btn" data-tr-title="Presentation mode (p)|プレゼンモード (p)">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="12" rx="1.5" stroke="currentColor" stroke-width="2"/><path d="M12 16v4M8 20h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
     </button>
-    <button id="printBtn" class="btn" title="印刷プレビュー（もう一度押すと印刷）">
+    <button id="printBtn" class="btn" data-tr-title="Print preview (press again to print)|印刷プレビュー（もう一度押すと印刷）">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M6 9V3h12v6M6 18H4a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-2M6 14h12v7H6z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
     </button>
     <button id="themeBtn" class="btn" title="Toggle light/dark">
@@ -1094,7 +1127,7 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
     </button>
     <!-- Export ドロップダウン -->
     <div style="position:relative">
-      <button id="exportBtn" class="btn btn-text" title="エクスポート" style="font-size:.78rem;gap:.3rem;width:auto;padding:.35rem .65rem">
+      <button id="exportBtn" class="btn btn-text" data-tr-title="Export|エクスポート" style="font-size:.78rem;gap:.3rem;width:auto;padding:.35rem .65rem">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Export
       </button>
@@ -1117,22 +1150,22 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
     <div class="skeleton-line"></div>
   </div>
 
-  <nav id="toc" aria-label="目次"></nav>
+  <nav id="toc" data-tr-aria-label="Table of contents|目次"></nav>
   <div id="diffMarkers" aria-hidden="true"></div>
   <div id="slides" hidden>
     <div id="slideStage"><div id="slideBody"></div></div>
     <div id="slideBar">
       <span id="slideNum"></span>
       <div id="slideProgress"><div></div></div>
-      <span>← → で移動・Esc で終了・f で全画面</span>
+      <span data-tr-text="← → to move · Esc to exit · f for fullscreen|← → で移動・Esc で終了・f で全画面"></span>
     </div>
   </div>
   <div id="searchBar" hidden>
-    <input id="searchInput" type="search" placeholder="検索…" autocomplete="off">
+    <input id="searchInput" type="search" data-tr-placeholder="Search…|検索…" autocomplete="off">
     <span id="searchCount"></span>
-    <button id="searchPrev" class="btn" title="前へ (Shift+Enter)">↑</button>
-    <button id="searchNext" class="btn" title="次へ (Enter)">↓</button>
-    <button id="searchClose" class="btn" title="閉じる (Esc)">✕</button>
+    <button id="searchPrev" class="btn" data-tr-title="Previous (Shift+Enter)|前へ (Shift+Enter)">↑</button>
+    <button id="searchNext" class="btn" data-tr-title="Next (Enter)|次へ (Enter)">↓</button>
+    <button id="searchClose" class="btn" data-tr-title="Close (Esc)|閉じる (Esc)">✕</button>
   </div>
   <div id="content" style="display:none"></div>
 
@@ -1171,6 +1204,20 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
 
     // ── DOM refs ──────────────────────────────────────────────────
     const $ = id => document.getElementById(id);
+
+    // ── 言語（英語 / 日本語）────────────────────────────────────
+    // サーバーが Neovim の lang 設定に合わせて <html lang> を決める
+    const LANG = document.documentElement.lang === 'ja' ? 'ja' : 'en';
+    const tr = (en, ja) => LANG === 'ja' ? ja : en;
+    // data-tr-<属性>="英語|日本語" を言語に合わせて設定する（data-tr-text は本文）
+    document.querySelectorAll('*').forEach(el => {
+      for (const { name, value } of Array.from(el.attributes)) {
+        if (!name.startsWith('data-tr-')) continue;
+        const [en, ja] = value.split('|');
+        const text = tr(en, ja ?? en), attr = name.slice('data-tr-'.length);
+        if (attr === 'text') el.textContent = text; else el.setAttribute(attr, text);
+      }
+    });
     const contentEl   = $('content');
     const titleEl     = $('title');
     const statusDot   = $('statusDot');
@@ -1315,7 +1362,7 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
         block.className = 'mermaid-block'; block.id = id;
         block.dataset.mermaidSource = source;
         block.innerHTML =
-          `<button class="mermaid-expand-btn" data-expand="${id}" title="全画面表示">${EXPAND_SVG}</button>` +
+          `<button class="mermaid-expand-btn" data-expand="${id}" title="${tr('Full screen', '全画面表示')}">${EXPAND_SVG}</button>` +
           `<div class="mermaid-svg-wrap"><p style="color:var(--fg-muted);font-size:.85rem">Rendering…</p></div>`;
         code.closest('pre').replaceWith(block);
       });
@@ -1557,7 +1604,7 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
         const a = document.createElement('a');
         a.className = 'anchor-link';
         a.href = '#' + id;
-        a.title = 'この見出しへのリンク';
+        a.title = tr('Link to this heading', 'この見出しへのリンク');
         a.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="m7.775 3.275 1.25-1.25a3.5 3.5 0 1 1 4.95 4.95l-2.5 2.5a3.5 3.5 0 0 1-4.95 0 .751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018 1.998 1.998 0 0 0 2.83 0l2.5-2.5a2.002 2.002 0 0 0-2.83-2.83l-1.25 1.25a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042Zm-4.69 9.64a1.998 1.998 0 0 0 2.83 0l1.25-1.25a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042l-1.25 1.25a3.5 3.5 0 1 1-4.95-4.95l2.5-2.5a3.5 3.5 0 0 1 4.95 0 .751.751 0 0 1-.018 1.042.751.751 0 0 1-1.042.018 1.998 1.998 0 0 0-2.83 0l-2.5 2.5a1.998 1.998 0 0 0 0 2.83Z"/></svg>';
         h.appendChild(a);
       });
@@ -1754,9 +1801,9 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       browserKeys = cfg.browser_keys !== false;
       if (!browserKeys) {
         // ボタンの説明からキーの案内を外す
-        $('tocBtn').title = '目次';
-        $('searchBtn').title = '検索';
-        $('slidesBtn').title = 'プレゼンモード';
+        $('tocBtn').title = tr('Table of contents', '目次');
+        $('searchBtn').title = tr('Search', '検索');
+        $('slidesBtn').title = tr('Presentation mode', 'プレゼンモード');
       }
     }).catch(() => {});
     prefersDark.addEventListener('change', () => {
@@ -1777,7 +1824,7 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
     });
     function buildToc() {
       const hs = Array.from(contentEl.querySelectorAll('h1,h2,h3,h4'));
-      if (!hs.length) { tocEl.innerHTML = '<div class="toc-empty">見出しがありません</div>'; return; }
+      if (!hs.length) { tocEl.innerHTML = `<div class="toc-empty">${tr('No headings', '見出しがありません')}</div>`; return; }
       const min = Math.min(...hs.map(h => +h.tagName[1]));
       tocEl.innerHTML = '';
       for (const h of hs) {
@@ -1847,7 +1894,7 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       gotoHit(searchHits.length ? 0 : -1);
     }
     function gotoHit(i) {
-      if (!searchHits.length) { searchCount.textContent = searchInput.value ? '0 件' : ''; return; }
+      if (!searchHits.length) { searchCount.textContent = searchInput.value ? tr('No results', '0 件') : ''; return; }
       searchIdx = (i + searchHits.length) % searchHits.length;
       searchHits.forEach((m, k) => m.classList.toggle('current', k === searchIdx));
       searchHits[searchIdx].scrollIntoView({ block: 'center' });
@@ -2106,7 +2153,7 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       renderMath(body);
       const preview = body.textContent.replace(/\s+/g, ' ').trim().slice(0, 80);
       const summary = document.createElement('summary');
-      summary.textContent = kind === 'del' ? '− 削除された内容' : '~ 変更前の内容';
+      summary.textContent = kind === 'del' ? tr('− Removed', '− 削除された内容') : tr('~ Before', '~ 変更前の内容');
       const pv = document.createElement('span');
       pv.className = 'diff-ghost-preview';
       pv.textContent = preview;
@@ -2122,7 +2169,7 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       nav.hidden = false;
       const base = diffState.base || 'HEAD';
       const hunks = diffState.hunks || [];
-      if (diffState.available === false) { $('diffSummary').textContent = `${base}: Git の差分を取得できません`; return; }
+      if (diffState.available === false) { $('diffSummary').textContent = tr(`${base}: Git diff unavailable`, `${base}: Git の差分を取得できません`); return; }
 
       const blocks = markerBlocks();
       const counts = { add: 0, mod: 0, del: 0 };
@@ -2199,8 +2246,9 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       diffTargets.forEach(t => counts[t.kind]++);
       const total = counts.add + counts.mod + counts.del;
       $('diffSummary').textContent = total
-        ? `${base} との差分 ${total} か所（+${counts.add} ~${counts.mod} −${counts.del}）`
-        : `${base} から変更なし`;
+        ? tr(`${total} change${total === 1 ? '' : 's'} vs ${base} (+${counts.add} ~${counts.mod} −${counts.del})`,
+             `${base} との差分 ${total} か所（+${counts.add} ~${counts.mod} −${counts.del}）`)
+        : tr(`No changes vs ${base}`, `${base} から変更なし`);
       $('diffPrev').disabled = $('diffNext').disabled = !diffTargets.length;
       positionDiffMarkers();
     }
@@ -2221,7 +2269,7 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
         m.className = 'm-' + t.kind;
         m.style.top = ((r.top + window.scrollY) / docH * trackH) + 'px';
         m.style.height = Math.max(3, r.height / docH * trackH) + 'px';
-        m.title = { add: '追加', mod: '変更', del: '削除' }[t.kind];
+        m.title = { add: tr('Added', '追加'), mod: tr('Changed', '変更'), del: tr('Removed', '削除') }[t.kind];
         m.addEventListener('click', () => gotoDiff(i));
         box.appendChild(m);
       });
@@ -2341,7 +2389,7 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       exportMenu.style.display = 'none';
       const label = exportBtn.lastChild.textContent;
       exportBtn.disabled = true;
-      exportBtn.lastChild.textContent = ' 変換中…';
+      exportBtn.lastChild.textContent = tr(' Converting…', ' 変換中…');
       try {
         const res = await fetch(`/export?format=${encodeURIComponent(format)}`);
         if (!res.ok) {
@@ -2363,7 +2411,7 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
         link.remove();
         setTimeout(() => URL.revokeObjectURL(url), 10000);
       } catch (e) {
-        alert(`エクスポートに失敗しました (${format})\n\n${e.message}`);
+        alert(`${tr('Export failed', 'エクスポートに失敗しました')} (${format})\n\n${e.message}`);
       } finally {
         exportBtn.disabled = false;
         exportBtn.lastChild.textContent = label;
