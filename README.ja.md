@@ -271,52 +271,109 @@ require("md_preview").setup({
 
 ## 設定
 
-設定はすべて省略できます。よく使うもの：
+設定はすべて省略できます。変えたいものだけを `setup()` に渡してください。
 
 ```lua
 require("md_preview").setup({
-  theme = "auto",        -- "auto" は OS の設定に従う。"dark" / "light" も可
-  auto_open = true,      -- 開始時にブラウザを開く
-  export = { paper = "a4" },
+  theme = "light",
+  git_diff_base = "main",
+  export = { paper = "us-letter", toc = true },
 })
 ```
 
+### 全般
+
+| 設定 | 既定値 | 説明 |
+|---|---|---|
+| `port` | `9876` | プレビューのサーバーのポート。使用中なら次の空きポートを使います。 |
+| `host` | `"127.0.0.1"` | 待ち受けるアドレス。`"0.0.0.0"` にすると LAN 内の別端末から見られます。その場合はトークンが必要になります（[レシピ](#レシピ)の「タブレットで一緒に見る」を参照）。 |
+| `auto_open` | `true` | プレビューの開始時にブラウザを開きます。 |
+| `binary` | `stdpath("data")/nvim-md-preview/` にダウンロードしたもの | プレビュー用バイナリのパス。ソースからビルドしたときに指定します。 |
+
+### プレビュー
+
+| 設定 | 既定値 | 説明 |
+|---|---|---|
+| `scroll_sync` | `true` | カーソルのあるブロックにプレビューをスクロールします。 |
+| `follow_buffer` | `true` | 別の Markdown バッファに移ったら、プレビューを切り替えます。 |
+| `debounce_ms` | `80` | 入力が止まってからプレビューを更新するまでの待ち時間（ミリ秒）。 |
+| `theme` | `"auto"` | `"auto"`（OS の設定に従う）、`"dark"`、`"light"`。プレビューのボタンで切り替えた場合は、そちらを記憶して優先します。 |
+| `custom_css` | `""` | 組み込みスタイルの後に読み込む CSS ファイルのパス。組み込みのスタイルを上書きできます。 |
+| `wiki_links` | `true` | `[[Page]]` と `[[Page\|表示名]]` を、Neovim で開けるリンクにします。 |
+| `browser_keys` | `true` | プレビュー画面のキーボードショートカット（`t`、`/`、Ctrl+F、`p`）。Vimium などのブラウザ拡張とぶつかる場合は `false` にします（[FAQ](#faq) を参照）。 |
+
+### Git の差分
+
+| 設定 | 既定値 | 説明 |
+|---|---|---|
+| `git_diff` | `true` | `git_diff_base` との差分をプレビューに表示します。`:MdPreviewDiff` で切り替えます。Git の管理外のファイルでは何も表示しません。 |
+| `git_diff_base` | `"HEAD"` | 比較の基準：`"HEAD"`、`"staged"`（ステージ済みの内容）、ブランチ・タグ・コミット。`:MdPreviewDiff <基準>` でその場だけ変えられます。 |
+| `git_diff_colors` | `true` | 差分の色をエディタ（`GitSignsAdd`、`Added`、`DiffAdd` など）に合わせます。プレビューのテーマで読みにくい色の場合は、緑・黄・赤を使います。 |
+
+### 出力（`export = { ... }`）
+
+| 設定 | 既定値 | 説明 |
+|---|---|---|
+| `formats` | `{ "pdf", "docx", "html", "epub", "markdown" }` | プレビューの Export メニューと `:MdPreviewExport` の補完に出す形式。`{}` にすると Export ボタンを隠します。 |
+| `pdf_engine` | `"typst"` | `"typst"` なら `:MdPreviewInstall` で PDF 用の Typst をダウンロードします。それ以外の値ではダウンロードしません。 |
+| `docx_engine` | `"pandoc"` | `"pandoc"` なら `:MdPreviewInstall` で DOCX・HTML・EPUB 用の pandoc をダウンロードします。それ以外の値ではダウンロードしません。 |
+| `pandoc_path` | `""` | pandoc のパス。空ならダウンロードしたもの、次に `PATH` 上の `pandoc` を使います。 |
+| `typst_path` | `""` | Typst のパス。空ならダウンロードしたもの、次に `PATH` 上の `typst` を使います。 |
+| `paper` | `"a4"` | PDF の用紙サイズ。`"us-letter"` や `"a5"` など、Typst の用紙名を指定します。 |
+| `margin` | `"2cm"` | PDF の余白。 |
+| `font` | `""` | PDF の本文フォント。空なら Noto Serif CJK JP などを使います。 |
+| `font_size` | `11` | PDF の本文サイズ（pt）。 |
+| `toc` | `false` | 目次を入れます（PDF・DOCX・HTML・EPUB）。 |
+| `numbering` | `false` | 見出しに番号を付けます（PDF・DOCX・HTML・EPUB）。 |
+| `template` | `""` | `template` 関数を export した Typst ファイル。PDF 全体に適用します（[レシピ](#レシピ)を参照）。 |
+
+### Vimscript
+
+`setup()` を呼ばない場合は、プラグインの読み込み時に次の変数を読みます。
+
+| 変数 | 対応する設定 |
+|---|---|
+| `g:md_preview_port` | `port` |
+| `g:md_preview_auto_open` | `auto_open`（`0` で無効） |
+
 <details>
-<summary>すべての設定と既定値</summary>
+<summary>すべての設定と既定値（コピー用）</summary>
 
 ```lua
 require("md_preview").setup({
-  port = 9876,            -- 使用中なら次の空きポートを使う
-  host = "127.0.0.1",     -- "0.0.0.0" で LAN 内の別端末から見られる（トークンが自動で必須になる）
-  auto_open = true,       -- 開始時にブラウザを開く
-  scroll_sync = true,     -- カーソルに合わせてプレビューをスクロール
-  follow_buffer = true,   -- 別の Markdown バッファに移ったらプレビューを切り替える
-  debounce_ms = 80,       -- 入力が止まってから更新するまでの待ち時間
-  theme = "auto",         -- "auto"（OS の設定に従う）| "dark" | "light"
-  custom_css = "",        -- 組み込みスタイルの後に読み込む CSS ファイル
-  wiki_links = true,      -- [[Page]] をリンクにする
-  browser_keys = true,    -- プレビュー画面のキーボードショートカット（t, /, Ctrl+F, p）。Vim 系拡張とぶつかる場合は false
-  git_diff = true,        -- Git の差分を表示する（:MdPreviewDiff で切り替え）。Git の管理外のファイルでは何も表示しない
-  git_diff_base = "HEAD", -- 比較の基準: "HEAD" | "staged" | ブランチ・タグ・コミット
-  git_diff_colors = true, -- 差分の色をエディタ（gitsigns、Added、DiffAdd など）に合わせる
+  binary = vim.fn.stdpath("data") .. "/nvim-md-preview/nvim-md-preview",
+  port = 9876,
+  host = "127.0.0.1",
+  auto_open = true,
+
+  scroll_sync = true,
+  follow_buffer = true,
+  debounce_ms = 80,
+  theme = "auto",
+  custom_css = "",
+  wiki_links = true,
+  browser_keys = true,
+
+  git_diff = true,
+  git_diff_base = "HEAD",
+  git_diff_colors = true,
 
   export = {
-    pdf_engine  = "typst",  -- "typst"。それ以外にすると Typst をダウンロードしない
-    docx_engine = "pandoc", -- "pandoc"。それ以外にすると pandoc をダウンロードしない
-    pandoc_path = "",       -- 空ならダウンロードしたもの、次に PATH 上のものを使う
-    typst_path  = "",
-    paper     = "a4",       -- PDF の用紙（Typst の用紙名。例: "us-letter"）
-    margin    = "2cm",
-    font      = "",         -- 空なら Noto Serif CJK JP など
+    formats = { "pdf", "docx", "html", "epub", "markdown" },
+    pdf_engine = "typst",
+    docx_engine = "pandoc",
+    pandoc_path = "",
+    typst_path = "",
+    paper = "a4",
+    margin = "2cm",
+    font = "",
     font_size = 11,
-    toc       = false,      -- 目次（PDF と pandoc の形式）
-    numbering = false,      -- 見出し番号
-    template  = "",         -- `template` を export した Typst ファイル（レシピを参照）
+    toc = false,
+    numbering = false,
+    template = "",
   },
 })
 ```
-
-Vimscript では `g:md_preview_port` と `g:md_preview_auto_open` も使えます。
 
 </details>
 

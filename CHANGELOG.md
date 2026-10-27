@@ -6,6 +6,10 @@ All notable changes are documented here. This project follows [Semantic Versioni
 
 ### Changed
 - The Git diff view is on by default (`git_diff = true`). Files outside a Git repository show nothing and no warning.
+- README lists every option in tables by category (general, preview, Git diff, export, Vimscript) with defaults and descriptions.
+
+### Fixed
+- `export.formats` had no effect. It now limits the formats in the preview's Export menu and in `:MdPreviewExport` completion; `{}` hides the Export button.
 
 ## [0.4.1] - 2026-10-28
 

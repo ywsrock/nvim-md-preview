@@ -46,7 +46,7 @@ M.config = {
     pdf_engine  = "typst",
     -- DOCX/HTML/EPUB エンジン: "pandoc"。それ以外にすると pandoc をダウンロードしない
     docx_engine = "pandoc",
-    -- 表示するエクスポート形式（不要なものは削除可）
+    -- プレビューの Export メニューと :MdPreviewExport の補完に出す形式（空にすると Export ボタンを隠す）
     formats = { "pdf", "docx", "html", "epub", "markdown" },
     -- バイナリパス（空の場合は自動ダウンロード先 ~/.local/share/nvim/nvim-md-preview/ を使用）
     pandoc_path = "",
@@ -310,6 +310,7 @@ local function send_export_config()
     custom_css = custom_css,
     wiki_links = M.config.wiki_links,
     browser_keys = M.config.browser_keys,
+    export_formats = M.config.export.formats,
     export = {
       paper     = ex.paper,
       margin    = ex.margin,

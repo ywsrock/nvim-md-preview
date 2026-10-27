@@ -271,52 +271,109 @@ Full reference: `:help md_preview`.
 
 ## Configuration
 
-Everything is optional. The most common settings:
+Every option is optional. Call `setup()` with only what you want to change:
 
 ```lua
 require("md_preview").setup({
-  theme = "auto",        -- "auto" follows the OS, or "dark" / "light"
-  auto_open = true,      -- open the browser when the preview starts
-  export = { paper = "a4" },
+  theme = "light",
+  git_diff_base = "main",
+  export = { paper = "us-letter", toc = true },
 })
 ```
 
+### General
+
+| Option | Default | Description |
+|---|---|---|
+| `port` | `9876` | Port of the preview server. If it is taken, the next free port is used. |
+| `host` | `"127.0.0.1"` | Address to listen on. `"0.0.0.0"` lets other devices on your LAN open the preview; a token is then required (see "Follow along on a tablet" in [Recipes](#recipes)). |
+| `auto_open` | `true` | Open the browser when the preview starts. |
+| `binary` | Downloaded copy in `stdpath("data")/nvim-md-preview/` | Path to the preview binary. Set it when you build from source. |
+
+### Preview
+
+| Option | Default | Description |
+|---|---|---|
+| `scroll_sync` | `true` | Scroll the preview to the block under the cursor. |
+| `follow_buffer` | `true` | Switch the preview when you enter another Markdown buffer. |
+| `debounce_ms` | `80` | Milliseconds to wait after typing before the preview updates. |
+| `theme` | `"auto"` | `"auto"` follows the OS, or `"dark"` / `"light"`. A theme chosen with the button in the preview is remembered and takes precedence. |
+| `custom_css` | `""` | Path to a CSS file loaded after the built-in styles, so it can override them. |
+| `wiki_links` | `true` | Render `[[Page]]` and `[[Page\|label]]` as links that open in Neovim. |
+| `browser_keys` | `true` | Keyboard shortcuts in the preview (`t`, `/`, Ctrl+F, `p`). Set `false` if they clash with a browser extension such as Vimium (see [FAQ](#faq)). |
+
+### Git diff
+
+| Option | Default | Description |
+|---|---|---|
+| `git_diff` | `true` | Show changes against `git_diff_base` in the preview. Toggle with `:MdPreviewDiff`. Files outside a Git repository show nothing. |
+| `git_diff_base` | `"HEAD"` | What to compare against: `"HEAD"`, `"staged"` (the index), or a branch, tag or commit. `:MdPreviewDiff <base>` changes it for the session. |
+| `git_diff_colors` | `true` | Use the editor's diff colors (`GitSignsAdd`, `Added`, `DiffAdd`, ...). Colors that are hard to read on the preview's theme fall back to green, yellow and red. |
+
+### Export (`export = { ... }`)
+
+| Option | Default | Description |
+|---|---|---|
+| `formats` | `{ "pdf", "docx", "html", "epub", "markdown" }` | Formats offered in the preview's Export menu and in `:MdPreviewExport` completion. `{}` hides the Export button. |
+| `pdf_engine` | `"typst"` | `"typst"` makes `:MdPreviewInstall` download Typst for PDF export. Any other value skips it. |
+| `docx_engine` | `"pandoc"` | `"pandoc"` makes `:MdPreviewInstall` download pandoc for DOCX, HTML and EPUB. Any other value skips it. |
+| `pandoc_path` | `""` | Path to pandoc. Empty uses the downloaded copy, then `pandoc` on your `PATH`. |
+| `typst_path` | `""` | Path to Typst. Empty uses the downloaded copy, then `typst` on your `PATH`. |
+| `paper` | `"a4"` | PDF paper size. Any Typst paper name, such as `"us-letter"` or `"a5"`. |
+| `margin` | `"2cm"` | PDF page margin. |
+| `font` | `""` | PDF body font. Empty uses Noto Serif CJK JP with fallbacks. |
+| `font_size` | `11` | PDF body font size in points. |
+| `toc` | `false` | Add a table of contents (PDF, DOCX, HTML, EPUB). |
+| `numbering` | `false` | Number headings (PDF, DOCX, HTML, EPUB). |
+| `template` | `""` | Typst file that exports a `template` function, applied to the whole PDF (see [Recipes](#recipes)). |
+
+### Vimscript
+
+Without `setup()`, these variables are read when the plugin loads:
+
+| Variable | Same as |
+|---|---|
+| `g:md_preview_port` | `port` |
+| `g:md_preview_auto_open` | `auto_open` (`0` turns it off) |
+
 <details>
-<summary>All options with defaults</summary>
+<summary>All options with their defaults, ready to copy</summary>
 
 ```lua
 require("md_preview").setup({
-  port = 9876,            -- the next free port is used if this one is taken
-  host = "127.0.0.1",     -- "0.0.0.0" to view from other devices on your LAN (a token is required automatically)
-  auto_open = true,       -- open the browser when the preview starts
-  scroll_sync = true,     -- scroll the preview with the cursor
-  follow_buffer = true,   -- switch the preview when you enter another Markdown buffer
-  debounce_ms = 80,       -- wait this long after typing before updating
-  theme = "auto",         -- "auto" (follow the OS) | "dark" | "light"
-  custom_css = "",        -- path to a CSS file loaded after the built-in styles
-  wiki_links = true,      -- render [[Page]] links
-  browser_keys = true,    -- keyboard shortcuts in the preview (t, /, Ctrl+F, p); false if they clash with a Vim extension
-  git_diff = true,        -- show Git changes in the preview (toggle with :MdPreviewDiff); nothing is shown outside a Git repository
-  git_diff_base = "HEAD", -- what to compare against: "HEAD" | "staged" | a branch, tag or commit
-  git_diff_colors = true, -- use the editor's diff colors (gitsigns, Added, DiffAdd, ...)
+  binary = vim.fn.stdpath("data") .. "/nvim-md-preview/nvim-md-preview",
+  port = 9876,
+  host = "127.0.0.1",
+  auto_open = true,
+
+  scroll_sync = true,
+  follow_buffer = true,
+  debounce_ms = 80,
+  theme = "auto",
+  custom_css = "",
+  wiki_links = true,
+  browser_keys = true,
+
+  git_diff = true,
+  git_diff_base = "HEAD",
+  git_diff_colors = true,
 
   export = {
-    pdf_engine  = "typst",  -- "typst"; anything else skips downloading Typst
-    docx_engine = "pandoc", -- "pandoc"; anything else skips downloading pandoc
-    pandoc_path = "",       -- empty: use the downloaded copy, then PATH
-    typst_path  = "",
-    paper     = "a4",       -- PDF paper size (any Typst paper name, e.g. "us-letter")
-    margin    = "2cm",
-    font      = "",         -- empty: Noto Serif CJK JP and fallbacks
+    formats = { "pdf", "docx", "html", "epub", "markdown" },
+    pdf_engine = "typst",
+    docx_engine = "pandoc",
+    pandoc_path = "",
+    typst_path = "",
+    paper = "a4",
+    margin = "2cm",
+    font = "",
     font_size = 11,
-    toc       = false,      -- table of contents (PDF and pandoc formats)
-    numbering = false,      -- numbered headings
-    template  = "",         -- Typst file that exports `template` (see Recipes)
+    toc = false,
+    numbering = false,
+    template = "",
   },
 })
 ```
-
-Vimscript users can set `g:md_preview_port` and `g:md_preview_auto_open`.
 
 </details>
 
