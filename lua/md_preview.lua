@@ -33,8 +33,8 @@ M.config = {
   -- プレビュー画面のキーボードショートカット（t: 目次 / "/" と Ctrl+F: 検索 / p: プレゼンモード）
   --   Vimium などブラウザの Vim 系拡張とキーがぶつかる場合は false にする（ボタンは使える）
   browser_keys = true,
-  -- Git の差分をプレビューに表示する（:MdPreviewDiff で切り替え）
-  git_diff = false,
+  -- Git の差分をプレビューに表示する（:MdPreviewDiff で切り替え）。Git の管理外のファイルでは何もしない
+  git_diff = true,
   -- 比較の基準: "HEAD" | "staged"（ステージ済みの内容）| ブランチ名・タグ・コミット
   git_diff_base = "HEAD",
   -- 差分の色をエディタ（gitsigns / DiffAdd など）に合わせる
@@ -121,37 +121,41 @@ local function git_object(base, file)
   return base .. ":./" .. file
 end
 
---- 比較の基準となる内容を返す。Git 管理外なら nil、基準に無いファイル（新規）なら ""。
---- 結果はバッファ・基準ごとにキャッシュする
+--- 比較の基準として使える ref か（staged / index は常に使える）
+local function ref_exists(dir, ref)
+  if ref == "staged" or ref == "index" then return true end
+  vim.fn.system({ "git", "-C", dir, "rev-parse", "--verify", "--quiet", ref .. "^{commit}" })
+  return vim.v.shell_error == 0
+end
+
+--- 比較の基準となる内容を返す: (内容, 基準, Git のリポジトリ内か)
+--- 内容は、基準に無いファイル（新規）なら ""、比較できなければ nil。結果はバッファ・基準ごとにキャッシュする
 local function git_base_content(buf)
-  local base_name = M.config.git_diff_base or "HEAD"
-  local key = buf .. "\0" .. base_name
+  local configured = M.config.git_diff_base or "HEAD"
+  local key = buf .. "\0" .. configured
   local cached = state.git_base[key]
-  if cached ~= nil then return cached or nil end
+  if cached ~= nil then return cached.content, cached.base, cached.in_repo end
+
+  local result = { content = nil, base = configured, in_repo = false }
   local name = vim.api.nvim_buf_get_name(buf)
-  local base = nil
   if name ~= "" and vim.fn.executable("git") == 1 then
     local dir = vim.fn.fnamemodify(name, ":h")
     local file = vim.fn.fnamemodify(name, ":t")
-    local out = vim.fn.system({ "git", "-C", dir, "show", git_object(base_name, file) })
+    -- Git の管理外なら何もしない（差分の表示が既定でオンなので、ここでは警告を出さない）
+    vim.fn.system({ "git", "-C", dir, "rev-parse", "--is-inside-work-tree" })
     if vim.v.shell_error == 0 then
-      base = out
-    else
-      -- 基準は実在するがファイルだけ無い（新規ファイル）なら、全体を「追加」として扱う。
-      -- 基準の名前が間違っている・Git 管理外のときは差分を出さない
-      local staged = base_name == "staged" or base_name == "index"
-      local check = staged and { "git", "-C", dir, "rev-parse", "--is-inside-work-tree" }
-        or { "git", "-C", dir, "rev-parse", "--verify", "--quiet", base_name .. "^{commit}" }
-      vim.fn.system(check)
-      if vim.v.shell_error == 0 then
-        base = ""
-      elseif not staged then
-        vim.notify(string.format("[md-preview] Comparison base not found: %s", base_name), vim.log.levels.WARN)
+      result.in_repo = true
+      if ref_exists(dir, configured) then
+        local out = vim.fn.system({ "git", "-C", dir, "show", git_object(configured, file) })
+        -- 基準にファイルが無い（新規ファイル）なら全体を「追加」として扱う
+        result.content = vim.v.shell_error == 0 and out or ""
+      else
+        vim.notify(string.format("[md-preview] Comparison base not found: %s", configured), vim.log.levels.WARN)
       end
     end
   end
-  state.git_base[key] = base or false
-  return base
+  state.git_base[key] = result
+  return result.content, result.base, result.in_repo
 end
 
 --- ハイライトグループの色（#rrggbb）。specs = { { グループ名, "fg" | "bg" }, ... } の順に探す
@@ -187,7 +191,9 @@ local function send_diff(buf)
     pcall(vim.rpcnotify, state.chan_id, "md_preview_diff", {}, info)
     return
   end
-  local base = git_base_content(buf)
+  local base, used_base, in_repo = git_base_content(buf)
+  info.base = used_base
+  info.in_repo = in_repo
   info.available = base ~= nil
   info.colors = diff_colors()
   local hunks = {}

@@ -121,7 +121,7 @@ Mermaid diagrams, KaTeX math and syntax highlighting for 190 languages are built
   <img alt="Word-level diff: an added sentence underlined, a removed callout and a new paragraph" src="docs/media/diff-light.png">
 </picture>
 
-`:MdPreviewDiff` compares the buffer, unsaved edits included, with `HEAD`, the index or any branch. Changed words are underlined or struck through in place, tables and math show the previous version in a collapsed box, removed paragraphs stay visible, and ↑ / ↓ in the header jump from change to change. The markers beside the scrollbar show where the changes are.
+Changes against `HEAD` are shown as soon as you edit a file in a Git repository, unsaved edits included. `:MdPreviewDiff main` compares with a branch instead, `:MdPreviewDiff staged` with the index, and `:MdPreviewDiff off` hides it. Changed words are underlined or struck through in place, tables and math show the previous version in a collapsed box, removed paragraphs stay visible, and ↑ / ↓ in the header jump from change to change. The markers beside the scrollbar show where the changes are.
 
 ### Find your way in long documents
 
@@ -296,7 +296,7 @@ require("md_preview").setup({
   custom_css = "",        -- path to a CSS file loaded after the built-in styles
   wiki_links = true,      -- render [[Page]] links
   browser_keys = true,    -- keyboard shortcuts in the preview (t, /, Ctrl+F, p); false if they clash with a Vim extension
-  git_diff = false,       -- show Git changes in the preview (toggle with :MdPreviewDiff)
+  git_diff = true,        -- show Git changes in the preview (toggle with :MdPreviewDiff); nothing is shown outside a Git repository
   git_diff_base = "HEAD", -- what to compare against: "HEAD" | "staged" | a branch, tag or commit
   git_diff_colors = true, -- use the editor's diff colors (gitsigns, Added, DiffAdd, ...)
 

@@ -121,7 +121,7 @@ Mermaid の図、KaTeX の数式、190 言語のシンタックスハイライ�
   <img alt="単語単位の差分: 追加した文の下線、削除された callout、追加した段落" src="docs/media/diff-light.png">
 </picture>
 
-`:MdPreviewDiff` で、バッファの内容（未保存の編集を含む）を `HEAD`・ステージ済みの内容・任意のブランチと比較します。変わった語は下線や取り消し線でその場に表示され、表や数式は変更前の内容を折りたたみで、削除された段落もその場所に残ります。ヘッダーの ↑ / ↓ で変更箇所を順に移動でき、スクロールバーの横の印で変更の位置が分かります。
+Git のリポジトリ内のファイルを編集すると、`HEAD` との差分（未保存の編集を含む）がすぐに表示されます。`:MdPreviewDiff main` でブランチと、`:MdPreviewDiff staged` でステージ済みの内容と比較でき、`:MdPreviewDiff off` で表示を消せます。変わった語は下線や取り消し線でその場に表示され、表や数式は変更前の内容を折りたたみで、削除された段落もその場所に残ります。ヘッダーの ↑ / ↓ で変更箇所を順に移動でき、スクロールバーの横の印で変更の位置が分かります。
 
 ### 長い文書でも迷わない
 
@@ -296,7 +296,7 @@ require("md_preview").setup({
   custom_css = "",        -- 組み込みスタイルの後に読み込む CSS ファイル
   wiki_links = true,      -- [[Page]] をリンクにする
   browser_keys = true,    -- プレビュー画面のキーボードショートカット（t, /, Ctrl+F, p）。Vim 系拡張とぶつかる場合は false
-  git_diff = false,       -- Git の差分を表示する（:MdPreviewDiff で切り替え）
+  git_diff = true,        -- Git の差分を表示する（:MdPreviewDiff で切り替え）。Git の管理外のファイルでは何も表示しない
   git_diff_base = "HEAD", -- 比較の基準: "HEAD" | "staged" | ブランチ・タグ・コミット
   git_diff_colors = true, -- 差分の色をエディタ（gitsigns、Added、DiffAdd など）に合わせる
 
