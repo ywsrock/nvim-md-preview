@@ -9,10 +9,19 @@ pub fn extract_front_matter(content: &str) -> (Option<String>, String) {
         return (None, content);
     }
 
-    // 閉じる `\n---\n` を探す
-    if let Some(rel) = content[4..].find("\n---\n") {
-        let fm = content[4..4 + rel].to_string();
-        let body = content[4 + rel + 5..].to_string();
+    // content[3..] = "\n..." の中で "\n---\n" を探す
+    // これにより "---\n---\n" （空 front matter）も検出できる
+    let search_from = &content[3..];
+    if let Some(pos) = search_from.find("\n---\n") {
+        let fm_end   = 4 + pos;            // content[4..fm_end] が front matter
+        let body_start = 3 + pos + 5;      // "\n---\n" = 5 文字
+        let fm   = content[4..fm_end].trim_end_matches('\n').to_string();
+        let body = if body_start <= content.len() {
+            content[body_start..].to_string()
+        } else {
+            // body_start がファイル末尾を超える場合（front matter が最後まで）
+            String::new()
+        };
         return (Some(fm), body);
     }
 
@@ -40,3 +49,4 @@ pub fn to_html(markdown: &str) -> String {
     html::push_html(&mut html_output, parser);
     html_output
 }
+

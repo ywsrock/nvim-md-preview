@@ -27,7 +27,6 @@ serde = { version = "1", features = ["derive"] }
 
 # プロセス間通信（nvim-rs が内部で使用）
 async-trait = "0.1"
-parity-tokio-ipc = "0.9"
 
 # 状態共有
 tokio-util = { version = "0.7", features = ["codec"] }

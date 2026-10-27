@@ -162,20 +162,30 @@ async fn assets_handler(
     Query(params): Query<AssetsParams>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
+    // パストラバーサル防止を最初にチェック（base_dir の有無より先）
+    if params.p.contains("..") { return StatusCode::FORBIDDEN.into_response(); }
+
     let base_dir = state.base_dir.read().await;
     let Some(dir) = base_dir.as_ref() else { return StatusCode::NOT_FOUND.into_response(); };
-    if params.p.contains("..") { return StatusCode::FORBIDDEN.into_response(); }
     let path = dir.join(&params.p);
     match tokio::fs::read(&path).await {
         Ok(data) => {
-            let mime = match path.extension().and_then(|e| e.to_str()) {
-                Some("png") => "image/png", Some("jpg") | Some("jpeg") => "image/jpeg",
-                Some("gif") => "image/gif", Some("svg") => "image/svg+xml",
-                Some("webp") => "image/webp", _ => "application/octet-stream",
-            };
+            let mime = mime_from_ext(&path);
             ([(header::CONTENT_TYPE, mime)], data).into_response()
         }
         Err(_) => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// 拡張子から MIME タイプを返す
+pub fn mime_from_ext(path: &std::path::Path) -> &'static str {
+    match path.extension().and_then(|e| e.to_str()) {
+        Some("png")  => "image/png",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("gif")  => "image/gif",
+        Some("svg")  => "image/svg+xml",
+        Some("webp") => "image/webp",
+        _            => "application/octet-stream",
     }
 }
 
@@ -863,3 +873,4 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
 </body>
 </html>
 "#;
+

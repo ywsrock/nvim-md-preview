@@ -491,7 +491,6 @@ dependencies = [
  "async-trait",
  "axum",
  "nvim-rs",
- "parity-tokio-ipc",
  "pulldown-cmark",
  "serde",
  "serde_json",

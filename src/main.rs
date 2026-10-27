@@ -9,6 +9,40 @@ use tokio::{io::Stdout, sync::broadcast};
 
 const DEFAULT_PORT: u16 = 9876;
 
+/// `md_preview_update` 通知を処理する
+/// RPC レイヤーから切り離してテスト可能にするため pub で公開
+pub async fn handle_update(state: &AppState, args: &[nvim_rs::Value]) {
+    let Some(content) = args.first().and_then(|v| v.as_str()) else { return; };
+    let title        = args.get(1).and_then(|v| v.as_str()).unwrap_or("md Preview");
+    let base_dir_str = args.get(2).and_then(|v| v.as_str()).unwrap_or("");
+
+    if !base_dir_str.is_empty() {
+        *state.base_dir.write().await = Some(PathBuf::from(base_dir_str));
+    }
+
+    let (front_matter, body) = markdown::extract_front_matter(content);
+    let html = markdown::to_html(&body);
+
+    let payload = serde_json::json!({
+        "type": "content",
+        "title": title,
+        "html": html,
+        "front_matter": front_matter,
+    }).to_string();
+
+    state.update_html(payload).await;
+}
+
+/// `md_preview_scroll` 通知を処理する
+pub fn handle_scroll(state: &AppState, args: &[nvim_rs::Value]) {
+    let line  = args.first().and_then(|v| v.as_u64()).unwrap_or(1);
+    let total = args.get(1).and_then(|v| v.as_u64()).unwrap_or(1);
+    let payload = serde_json::json!({
+        "type": "scroll", "line": line, "total": total,
+    }).to_string();
+    state.send_scroll(payload);
+}
+
 #[derive(Clone)]
 struct MarkdownPreviewHandler {
     state: Arc<AppState>,
@@ -25,35 +59,8 @@ impl Handler for MarkdownPreviewHandler {
         _nvim: Neovim<Self::Writer>,
     ) {
         match name.as_str() {
-            "md_preview_update" => {
-                let Some(content) = args.first().and_then(|v| v.as_str()) else { return; };
-                let title        = args.get(1).and_then(|v| v.as_str()).unwrap_or("md Preview");
-                let base_dir_str = args.get(2).and_then(|v| v.as_str()).unwrap_or("");
-
-                if !base_dir_str.is_empty() {
-                    *self.state.base_dir.write().await = Some(PathBuf::from(base_dir_str));
-                }
-
-                let (front_matter, body) = markdown::extract_front_matter(content);
-                let html = markdown::to_html(&body);
-
-                let payload = serde_json::json!({
-                    "type": "content",
-                    "title": title,
-                    "html": html,
-                    "front_matter": front_matter,
-                }).to_string();
-
-                self.state.update_html(payload).await;
-            }
-            "md_preview_scroll" => {
-                let line  = args.first().and_then(|v| v.as_u64()).unwrap_or(1);
-                let total = args.get(1).and_then(|v| v.as_u64()).unwrap_or(1);
-                let payload = serde_json::json!({
-                    "type": "scroll", "line": line, "total": total,
-                }).to_string();
-                self.state.send_scroll(payload);
-            }
+            "md_preview_update" => handle_update(&self.state, &args).await,
+            "md_preview_scroll" => handle_scroll(&self.state, &args),
             _ => {}
         }
     }
@@ -90,3 +97,4 @@ async fn main() {
     let (_nvim, io_handler) = create::new_parent(handler).await;
     let _ = io_handler.await;
 }
+
