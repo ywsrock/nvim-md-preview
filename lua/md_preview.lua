@@ -406,36 +406,67 @@ end
 
 --- pandoc をインストール
 function M._install_pandoc(install_dir, sysname, machine, is_win, ext)
-  -- pandoc GitHub Releases の URL
-  -- https://github.com/jgm/pandoc/releases/latest/download/
-  local fname
-  if sysname == "Linux" then
-    fname = "pandoc-linux-amd64.tar.gz"
-  elseif sysname == "Darwin" then
-    fname = (machine == "arm64" or machine == "aarch64")
-      and "pandoc-macOS-arm64.zip" or "pandoc-macOS-x86_64.zip"
+  -- pandoc はバージョン番号入りファイル名なので GitHub API でバージョンを取得
+  local version_cmd
+  if vim.fn.executable("curl") == 1 then
+    version_cmd = 'curl -sL "https://api.github.com/repos/jgm/pandoc/releases/latest"'
+  elseif vim.fn.has("win32") == 1 then
+    version_cmd = 'powershell -NoProfile -Command "(Invoke-WebRequest -Uri \'https://api.github.com/repos/jgm/pandoc/releases/latest\' -UseBasicParsing).Content"'
   else
-    fname = "pandoc-windows-x86_64.zip"
+    return false
   end
 
-  local url     = "https://github.com/jgm/pandoc/releases/latest/download/" .. fname
+  local json_raw = vim.fn.system(version_cmd)
+  local version = json_raw:match('"tag_name"%s*:%s*"([^"]+)"')
+  if not version then
+    vim.notify("[md-preview] pandoc のバージョン取得に失敗しました", vim.log.levels.WARN)
+    return false
+  end
+
+  -- ファイル名決定（例: pandoc-3.13-windows-x86_64.zip）
+  local fname
+  if sysname == "Linux" then
+    fname = string.format("pandoc-%s-linux-amd64.tar.gz", version)
+  elseif sysname == "Darwin" then
+    fname = (machine == "arm64" or machine == "aarch64")
+      and string.format("pandoc-%s-arm64-macOS.zip", version)
+       or string.format("pandoc-%s-x86_64-macOS.zip", version)
+  else
+    fname = string.format("pandoc-%s-windows-x86_64.zip", version)
+  end
+
+  local url     = string.format("https://github.com/jgm/pandoc/releases/download/%s/%s", version, fname)
   local archive = install_dir .. "/" .. fname
   local pandoc  = install_dir .. "/pandoc" .. ext
 
+  vim.notify("[md-preview] pandoc " .. version .. " をダウンロード中...", vim.log.levels.INFO)
   if not M._download(url, archive) then return false end
 
   -- 解凍
-  local ok
   if fname:match("%.tar%.gz$") then
-    ok = vim.fn.system(string.format(
-      'tar -xzf "%s" -C "%s" --wildcards "*/bin/pandoc" --strip-components=2 2>/dev/null || '
-      .. 'tar -xzf "%s" -C "%s" --wildcards "*/pandoc" --strip-components=2',
-      archive, install_dir, archive, install_dir
+    -- Linux: tar.gz から bin/pandoc を取り出す
+    vim.fn.system(string.format('tar -xzf "%s" -C "%s" --wildcards "*/bin/pandoc" --strip-components=2', archive, install_dir))
+    -- 解凍後パスを確認して移動
+    local found = install_dir .. "/bin/pandoc"
+    if vim.fn.filereadable(found) == 1 then
+      vim.fn.system(string.format('mv "%s" "%s"', found, pandoc))
+      vim.fn.system('rmdir "' .. install_dir .. '/bin" 2>/dev/null; true')
+    end
+  elseif is_win then
+    -- Windows: PowerShell で解凍
+    vim.fn.system(string.format(
+      'powershell -NoProfile -Command "Expand-Archive -Path \'%s\' -DestinationPath \'%s\' -Force"',
+      archive, install_dir .. "/pandoc_tmp"
     ))
-    -- 解凍されたファイルを正しい位置に移動
-    vim.fn.system(string.format('mv "%s/pandoc" "%s" 2>/dev/null; true', install_dir, pandoc))
+    -- pandoc.exe を探して移動
+    local found = vim.fn.glob(install_dir .. "/pandoc_tmp/**/pandoc.exe", false, true)
+    if #found > 0 then
+      vim.fn.system(string.format('move "%s" "%s"', found[1], pandoc))
+    end
+    vim.fn.system('rmdir /s /q "' .. install_dir .. '\\pandoc_tmp" 2>nul')
   else
-    ok = vim.fn.system(string.format('unzip -jo "%s" "*/pandoc%s" -d "%s"', archive, ext, install_dir))
+    -- macOS: unzip
+    vim.fn.system(string.format('unzip -jo "%s" "*/bin/pandoc" -d "%s"', archive, install_dir))
   end
   vim.fn.delete(archive)
 
