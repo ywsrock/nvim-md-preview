@@ -118,7 +118,7 @@ Mermaid の図、KaTeX の数式、190 言語のシンタックスハイライ�
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/media/diff-dark.png">
-  <img alt="Git の HEAD との単語単位の差分" src="docs/media/diff-light.png">
+  <img alt="単語単位の差分: 追加した文の下線、削除された callout、追加した段落" src="docs/media/diff-light.png">
 </picture>
 
 `:MdPreviewDiff` で、バッファの内容（未保存の編集を含む）を `HEAD`・ステージ済みの内容・任意のブランチと比較します。変わった語は下線や取り消し線でその場に表示され、表や数式は変更前の内容を折りたたみで、削除された段落もその場所に残ります。ヘッダーの ↑ / ↓ で変更箇所を順に移動でき、スクロールバーの横の印で変更の位置が分かります。

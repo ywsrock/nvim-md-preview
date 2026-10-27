@@ -118,7 +118,7 @@ Mermaid diagrams, KaTeX math and syntax highlighting for 190 languages are built
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/media/diff-dark.png">
-  <img alt="Word-level diff of a document against Git HEAD" src="docs/media/diff-light.png">
+  <img alt="Word-level diff: an added sentence underlined, a removed callout and a new paragraph" src="docs/media/diff-light.png">
 </picture>
 
 `:MdPreviewDiff` compares the buffer, unsaved edits included, with `HEAD`, the index or any branch. Changed words are underlined or struck through in place, tables and math show the previous version in a collapsed box, removed paragraphs stay visible, and ↑ / ↓ in the header jump from change to change. The markers beside the scrollbar show where the changes are.
