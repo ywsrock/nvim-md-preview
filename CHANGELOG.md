@@ -2,7 +2,7 @@
 
 All notable changes are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.4.0] - 2026-10-28
 
 ### Changed
 - All Neovim messages, `:checkhealth`, command descriptions, export errors and the preview page are now in English (they were in Japanese).
