@@ -17,6 +17,7 @@ Neovim 用 Markdown プレビュープラグイン。Rust 製のローカル HTT
 - 🖼️ 相対パス画像の自動解決
 - 📡 オフライン完全動作（JS/CSS をバイナリに埋め込み済み）
 - 🔌 ポート競合時は自動で空きポートを使用
+- 📤 エクスポート（PDF / DOCX / HTML / EPUB / Markdown）
 
 ## 動作環境
 
@@ -111,18 +112,10 @@ require("md_preview").setup({
 
   -- エクスポート設定
   export = {
-    -- PDF エンジン
-    --   "typst"  : 高品質 PDF（デフォルト。:MdPreviewInstall で自動ダウンロード）
-    --   "print"  : ブラウザ印刷ダイアログ（Typst 不要）
+    -- PDF エンジン: "typst"（高品質・推奨）
     pdf_engine  = "typst",
-
-    -- DOCX/HTML/EPUB エンジン
-    --   "pandoc" : 高品質変換（デフォルト。:MdPreviewInstall で自動ダウンロード）
-    --   "none"   : エクスポート無効
+    -- DOCX/HTML/EPUB エンジン: "pandoc"（推奨）
     docx_engine = "pandoc",
-
-    -- 表示するエクスポート形式（不要なものは削除可）
-    formats = { "pdf", "docx", "html", "epub", "markdown" },
 
     -- バイナリパスを手動指定（省略時は自動ダウンロード先を使用）
     pandoc_path = "",
@@ -157,33 +150,19 @@ let g:md_preview_auto_open = 1      " 自動でブラウザを開く（0 で無�
 `:MdPreviewInstall` を実行すると以下が自動でダウンロードされます：
 
 ```
-~/.local/share/nvim/nvim-md-preview/
-  ├── nvim-md-preview    ← プレビューバイナリ
-  ├── pandoc             ← DOCX/HTML/EPUB 用（~30MB）
-  └── typst              ← PDF 用（~30MB）
+# stdpath("data")/nvim-md-preview/ （OS ごとに場所が異なる）
+# Linux:   ~/.local/share/nvim/nvim-md-preview/
+# macOS:   ~/Library/Application Support/nvim/nvim-md-preview/
+# Windows: %LOCALAPPDATA%\nvim-data\nvim-md-preview\
+
+nvim-md-preview    ← プレビューバイナリ
+pandoc             ← DOCX/HTML/EPUB 用（~30MB）
+typst              ← PDF 用（~30MB）
 ```
 
-### エンジンを変更したい場合
+### バイナリパスを手動指定する場合
 
 ```lua
--- PDF をブラウザ印刷に変更（Typst 不要）
-require("md_preview").setup({
-  export = {
-    pdf_engine  = "print",   -- ブラウザの印刷ダイアログを使用
-    docx_engine = "pandoc",
-  },
-})
-
--- pandoc を使わない（DOCX/HTML/EPUB を無効化）
-require("md_preview").setup({
-  export = {
-    pdf_engine  = "typst",
-    docx_engine = "none",
-    formats     = { "pdf", "markdown" },  -- PDF と Markdown のみ表示
-  },
-})
-
--- 手動インストールしたバイナリを使用
 require("md_preview").setup({
   export = {
     pandoc_path = "/usr/local/bin/pandoc",
@@ -259,7 +238,7 @@ bash download-libs.sh
 cargo build --release
 ```
 
-`init.vim` にパスを設定:
+`init.vim` にバイナリパスを設定:
 
 ```vim
 lua require("md_preview").setup({
