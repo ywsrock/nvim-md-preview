@@ -29,8 +29,36 @@ jobs:
           echo "typst=$TYPST"   >> "$GITHUB_OUTPUT"
           echo "pandoc $PANDOC / typst $TYPST"
 
+  # 下書きの Release を作る。各ビルドはここにファイルを追加し、全部そろってから公開する
+  # （このリポジトリの Release は公開後に変更できないため、公開してから追加すると失敗する）
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="$GITHUB_REF_NAME"
+          VERSION="${TAG#v}"
+          # CHANGELOG の "## [VERSION]" の節をリリースノートにする
+          awk -v v="$VERSION" '
+            $0 ~ "^## \\[" v "\\]" { on = 1; next }
+            on && /^## \[/ { exit }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists"
+          elif [ -s notes.md ]; then
+            gh release create "$TAG" --draft --title "$TAG" --notes-file notes.md
+          else
+            gh release create "$TAG" --draft --title "$TAG" --generate-notes
+          fi
+
   build:
-    needs: versions
+    needs: [versions, release]
     strategy:
       fail-fast: false
       matrix:
@@ -94,52 +122,10 @@ jobs:
             target
           key: cargo-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
 
-      - name: Download JS libraries (Unix)
-        if: runner.os != 'Windows'
+      # Windows でも Git for Windows の bash で同じスクリプトを使う
+      - name: Download JS libraries
+        shell: bash
         run: bash download-libs.sh
-
-      - name: Download JS libraries (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path src/embedded_lib/fonts | Out-Null
-          $base = "https://cdn.jsdelivr.net"
-          function DL($url, $out) { Invoke-WebRequest -Uri $url -OutFile $out -UseBasicParsing }
-          function DLGz($url, $out) {
-            $tmp = [System.IO.Path]::GetTempFileName()
-            Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing
-            $bytes = [System.IO.File]::ReadAllBytes($tmp)
-            $ms = New-Object System.IO.MemoryStream
-            $gz = New-Object System.IO.Compression.GZipStream($ms, [System.IO.Compression.CompressionMode]::Compress)
-            $gz.Write($bytes, 0, $bytes.Length); $gz.Close()
-            [System.IO.File]::WriteAllBytes($out, $ms.ToArray())
-            Remove-Item $tmp
-          }
-          DLGz "$base/gh/highlightjs/cdn-release@11/build/highlight.min.js"          "src/embedded_lib/highlight.min.js.gz"
-          DLGz "$base/gh/highlightjs/cdn-release@11/build/styles/github-dark.min.css" "src/embedded_lib/hljs-dark.min.css.gz"
-          DLGz "$base/gh/highlightjs/cdn-release@11/build/styles/github.min.css"      "src/embedded_lib/hljs-light.min.css.gz"
-          DLGz "$base/npm/mermaid@11/dist/mermaid.min.js"                             "src/embedded_lib/mermaid.min.js.gz"
-          DLGz "$base/npm/katex@0.16/dist/katex.min.js"                               "src/embedded_lib/katex.min.js.gz"
-          DLGz "$base/npm/katex@0.16/dist/contrib/auto-render.min.js"                 "src/embedded_lib/auto-render.min.js.gz"
-          $css = (Invoke-WebRequest -Uri "$base/npm/katex@0.16/dist/katex.min.css" -UseBasicParsing).Content
-          $css = $css -replace 'url\(fonts/', 'url(/lib/fonts/'
-          $enc = [System.Text.Encoding]::UTF8.GetBytes($css)
-          $ms = New-Object System.IO.MemoryStream
-          $gz = New-Object System.IO.Compression.GZipStream($ms, [System.IO.Compression.CompressionMode]::Compress)
-          $gz.Write($enc, 0, $enc.Length); $gz.Close()
-          [System.IO.File]::WriteAllBytes("src/embedded_lib/katex.min.css.gz", $ms.ToArray())
-          $fonts = @(
-            "KaTeX_AMS-Regular","KaTeX_Caligraphic-Bold","KaTeX_Caligraphic-Regular",
-            "KaTeX_Fraktur-Bold","KaTeX_Fraktur-Regular","KaTeX_Main-Bold",
-            "KaTeX_Main-BoldItalic","KaTeX_Main-Italic","KaTeX_Main-Regular",
-            "KaTeX_Math-BoldItalic","KaTeX_Math-Italic","KaTeX_SansSerif-Bold",
-            "KaTeX_SansSerif-Italic","KaTeX_SansSerif-Regular","KaTeX_Script-Regular",
-            "KaTeX_Size1-Regular","KaTeX_Size2-Regular","KaTeX_Size3-Regular",
-            "KaTeX_Size4-Regular","KaTeX_Typewriter-Regular"
-          )
-          foreach ($f in $fonts) {
-            DL "$base/npm/katex@0.16/dist/fonts/${f}.woff2" "src/embedded_lib/fonts/${f}.woff2"
-          }
 
       - name: Build nvim-md-preview
         run: cargo build --release --target ${{ matrix.target }}
@@ -231,14 +217,23 @@ jobs:
         shell: pwsh
         run: Move-Item target/${{ matrix.target }}/release/${{ matrix.artifact }} nvim-md-preview-${{ matrix.target }}.exe
 
-      - name: Upload to Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            nvim-md-preview-${{ matrix.target }}*
-            ${{ matrix.pandoc_bin }}
-            ${{ matrix.typst_bin }}
-            pandoc-*.tar.gz
-            typst-*.tar.gz
+      - name: Upload to draft release
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release upload "$GITHUB_REF_NAME" --clobber \
+            nvim-md-preview-${{ matrix.target }}* \
+            "${{ matrix.pandoc_bin }}" "${{ matrix.typst_bin }}" \
+            pandoc-*.tar.gz typst-*.tar.gz
+
+  # すべてのビルドが成功したときだけ公開する（1 つでも失敗すれば下書きのまま残る）
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest

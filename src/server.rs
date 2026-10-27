@@ -1117,12 +1117,12 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
         Export
       </button>
       <div id="exportMenu" style="display:none;position:absolute;right:0;top:100%;min-width:160px;background:var(--panel);border:1px solid var(--stroke);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.3);z-index:20;overflow:hidden">
-        <button class="export-item" data-format="pdf">📄 PDF <span style="font-size:.7rem;color:var(--fg-muted)">(Typst)</span></button>
-        <button class="export-item" data-format="docx">📝 DOCX <span style="font-size:.7rem;color:var(--fg-muted)">(pandoc)</span></button>
-        <button class="export-item" data-format="html">🌐 HTML <span style="font-size:.7rem;color:var(--fg-muted)">(pandoc)</span></button>
-        <button class="export-item" data-format="epub">📚 EPUB <span style="font-size:.7rem;color:var(--fg-muted)">(pandoc)</span></button>
+        <button class="export-item" data-format="pdf">PDF <span style="font-size:.7rem;color:var(--fg-muted)">(Typst)</span></button>
+        <button class="export-item" data-format="docx">DOCX <span style="font-size:.7rem;color:var(--fg-muted)">(pandoc)</span></button>
+        <button class="export-item" data-format="html">HTML <span style="font-size:.7rem;color:var(--fg-muted)">(pandoc)</span></button>
+        <button class="export-item" data-format="epub">EPUB <span style="font-size:.7rem;color:var(--fg-muted)">(pandoc)</span></button>
         <div style="height:1px;background:var(--stroke);margin:.25rem 0"></div>
-        <button class="export-item" data-format="markdown">🔤 Markdown</button>
+        <button class="export-item" data-format="markdown">Markdown</button>
       </div>
     </div>
   </header>

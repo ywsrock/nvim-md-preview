@@ -33,6 +33,10 @@ require("md_preview").setup({ binary = vim.fn.getcwd() .. "/target/release/nvim-
 
 The preview page is embedded in `src/server.rs`, so rebuild the binary after changing HTML, CSS or JS.
 
+## Embedded libraries
+
+`download-libs.sh` fetches Mermaid, KaTeX and highlight.js into `src/embedded_lib/` and checks each file against a pinned SHA-256 checksum. To update a library, change its `*_VERSION` in the script, run `bash download-libs.sh --update-checksums`, paste the printed lines into `CHECKSUMS`, and run the script again to confirm it passes. Check the upstream changelog before bumping a major version.
+
 ## Pull requests
 
 - Keep each PR focused on one change and describe how you verified it.
