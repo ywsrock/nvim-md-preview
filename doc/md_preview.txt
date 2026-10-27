@@ -1,0 +1,203 @@
+*md_preview.txt*  Live Markdown preview for Neovim
+
+Author:  ywsrock
+License: MIT
+
+==============================================================================
+CONTENTS                                                *md-preview-contents*
+
+  1. Introduction ............................ |md-preview-introduction|
+  2. Installation ............................ |md-preview-installation|
+  3. Commands ................................ |md-preview-commands|
+  4. Configuration ........................... |md-preview-configuration|
+  5. Browser keys ............................ |md-preview-keys|
+  6. Export .................................. |md-preview-export|
+  7. LAN mode ................................ |md-preview-lan|
+  8. Lua API ................................. |md-preview-api|
+  9. Troubleshooting ......................... |md-preview-troubleshooting|
+
+==============================================================================
+1. INTRODUCTION                                     *md-preview-introduction*
+
+nvim-md-preview renders the current Markdown buffer in your browser and keeps
+it in sync as you type. A single Rust binary converts Markdown to HTML and
+serves the page on 127.0.0.1; Mermaid, KaTeX, highlight.js and fonts are
+embedded, so it works offline and needs no Node.js.
+
+The preview scrolls with the cursor block by block. Clicking a paragraph in
+the preview moves the cursor to that line, and clicking a local `.md` link or
+a wiki link opens that file in Neovim.
+
+==============================================================================
+2. INSTALLATION                                     *md-preview-installation*
+
+Install the plugin with your plugin manager, then run |:MdPreviewInstall|.
+With lazy.nvim: >lua
+    {
+      "ywsrock/nvim-md-preview",
+      ft = "markdown",
+      build = ":MdPreviewInstall",
+      config = function() require("md_preview").setup({}) end,
+    }
+<
+Files are stored in `stdpath("data")/nvim-md-preview/`.
+
+Run `:checkhealth md_preview` to check the binary, pandoc, Typst, download
+tools and how the browser is opened.
+
+==============================================================================
+3. COMMANDS                                             *md-preview-commands*
+
+:MarkdownPreview                                          *:MarkdownPreview*
+:MdPreview                                                      *:MdPreview*
+    Start the preview for the current Markdown buffer. Downloads the binary
+    first if it is missing.
+
+:MarkdownPreviewStop                                  *:MarkdownPreviewStop*
+:MdPreviewStop                                              *:MdPreviewStop*
+    Stop the preview server.
+
+:MarkdownPreviewToggle                              *:MarkdownPreviewToggle*
+    Start or stop the preview.
+
+:MdPreviewExport {format} [{path}]                        *:MdPreviewExport*
+    Export the buffer being previewed, including unsaved changes. {format}
+    is one of `pdf`, `docx`, `html`, `epub`, `markdown`. Without {path} the
+    file is written next to the source with the new extension. The preview
+    must be running.
+
+:MdPreviewDiff                                              *:MdPreviewDiff*
+    Toggle |md-preview-git_diff|: mark blocks changed since Git `HEAD`.
+
+:MdPreviewInstall                                        *:MdPreviewInstall*
+    Download the preview binary, pandoc and Typst in parallel. Progress is
+    shown on the command line and a summary is shown when done.
+
+==============================================================================
+4. CONFIGURATION                                   *md-preview-configuration*
+
+Call `require("md_preview").setup(opts)`. All keys are optional; defaults:
+
+    port                                                  *md-preview-port*
+        `9876`. If it is taken, the next free port is used.
+
+    host                                                  *md-preview-host*
+        `"127.0.0.1"`. Set `"0.0.0.0"` for |md-preview-lan|.
+
+    auto_open                                        *md-preview-auto_open*
+        `true`. Open the browser when the preview starts.
+
+    scroll_sync                                    *md-preview-scroll_sync*
+        `true`. Scroll the preview with the cursor.
+
+    follow_buffer                                *md-preview-follow_buffer*
+        `true`. Switch the preview when you enter another Markdown buffer.
+
+    debounce_ms                                    *md-preview-debounce_ms*
+        `80`. Milliseconds to wait after typing before updating.
+
+    theme                                                *md-preview-theme*
+        `"auto"`, `"dark"` or `"light"`. "auto" follows the OS. Toggling the
+        theme in the browser is remembered and takes precedence.
+
+    custom_css                                      *md-preview-custom_css*
+        `""`. Path to a CSS file loaded after the built-in styles.
+
+    wiki_links                                      *md-preview-wiki_links*
+        `true`. Render `[[Page]]` and `[[Page|label]]` as links. `.md` is
+        added when the target has no extension.
+
+    git_diff                                          *md-preview-git_diff*
+        `false`. Mark added, modified and deleted blocks compared with Git
+        `HEAD`. Toggle with |:MdPreviewDiff|.
+
+    binary                                              *md-preview-binary*
+        Path to the preview binary. Defaults to the downloaded copy.
+
+    export                                       *md-preview-export-config*
+        See |md-preview-export|.
+
+Vimscript: `g:md_preview_port` and `g:md_preview_auto_open` are also read.
+
+==============================================================================
+5. BROWSER KEYS                                             *md-preview-keys*
+
+    t               Toggle the table of contents.
+    / or CTRL-F     Search. <Enter> / <S-Enter> next / previous, <Esc> close.
+    p               Presentation mode. Slides are split on `---`, or on h1/h2
+                    when there is none. Arrow keys move, `f` fullscreen,
+                    <Esc> exits. The slide follows the editor cursor.
+    click           Jump to that line in Neovim.
+
+The print button shows the page on an A4 sheet with page-break guides; press
+it again to print.
+
+==============================================================================
+6. EXPORT                                                *md-preview-export*
+
+PDF uses Typst, DOCX / HTML / EPUB use pandoc. Both are downloaded by
+|:MdPreviewInstall|. Options under `export`:
+
+    pdf_engine      `"typst"`. Any other value skips downloading Typst.
+    docx_engine     `"pandoc"`. Any other value skips downloading pandoc.
+    pandoc_path     `""`. Empty: downloaded copy, then `pandoc` on PATH.
+    typst_path      `""`. Empty: downloaded copy, then `typst` on PATH.
+    paper           `"a4"`. Any Typst paper name, e.g. `"us-letter"`.
+    margin          `"2cm"`.
+    font            `""`. Empty: Noto Serif CJK JP with fallbacks.
+    font_size       `11` (pt).
+    toc             `false`. Add a table of contents (PDF and pandoc).
+    numbering       `false`. Number headings (PDF and pandoc).
+    template        `""`. A Typst file exporting `template`, applied as a
+                    show rule:
+>typst
+    #let template(doc) = {
+      set page(header: align(right)[Internal])
+      doc
+    }
+<
+Relative image paths are resolved from the document's directory.
+
+==============================================================================
+7. LAN MODE                                                  *md-preview-lan*
+
+With `host = "0.0.0.0"` the server listens on all interfaces so you can open
+the preview from a tablet or another computer. A random token is generated
+every time the preview starts and the LAN URLs are shown in Neovim. Requests
+without the token are rejected; a browser that opened the URL once keeps a
+cookie for the session.
+
+In the default localhost mode the server rejects requests whose Host is not
+a loopback name and any cross-origin request or WebSocket.
+
+==============================================================================
+8. LUA API                                                   *md-preview-api*
+
+    require("md_preview").setup({opts})       Configure the plugin.
+    require("md_preview").start()             Same as |:MarkdownPreview|.
+    require("md_preview").stop()              Same as |:MarkdownPreviewStop|.
+    require("md_preview").export({fmt}, {path}) Same as |:MdPreviewExport|.
+    require("md_preview").toggle_diff()       Same as |:MdPreviewDiff|.
+    require("md_preview").install({opts})     Same as |:MdPreviewInstall|.
+        {opts}.missing_only  download only files that are missing
+        {opts}.on_done       function(ok) called when finished
+
+==============================================================================
+9. TROUBLESHOOTING                               *md-preview-troubleshooting*
+
+Run `:checkhealth md_preview` first.
+
+The browser does not open ~
+    Open the URL shown in the message manually, or set `auto_open = false`.
+    On WSL, install `wslu` for `wslview`.
+
+Export fails ~
+    Make sure pandoc or Typst is installed (|:MdPreviewInstall|). PDF export
+    downloads the `cmarker` Typst package on first use, which needs network
+    access once.
+
+Nothing updates ~
+    Check that the status dot in the page header is green. Restart with
+    |:MdPreviewStop| and |:MdPreview|.
+
+ vim:tw=78:ts=8:ft=help:norl:

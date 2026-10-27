@@ -13,6 +13,9 @@ M.config = {
   binary = vim.fn.stdpath("data") .. "/nvim-md-preview/nvim-md-preview"
     .. (vim.fn.has("win32") == 1 and ".exe" or ""),
   port = 9876,
+  -- 待ち受けアドレス。"0.0.0.0" にすると LAN 内の別端末（タブレットなど）から見られる。
+  --   その場合は毎回ランダムなトークンを発行し、トークン付き URL でしか開けない
+  host = "127.0.0.1",
   auto_open = true,
   -- カーソル移動に合わせてプレビューをスクロールする
   scroll_sync = true,
@@ -20,18 +23,38 @@ M.config = {
   follow_buffer = true,
   -- 入力が止まってからプレビューを更新するまでの待ち時間（ms）
   debounce_ms = 80,
+  -- 初期テーマ: "auto"（OS の設定に従う）| "dark" | "light"
+  --   ブラウザのボタンで切り替えた場合はそちらが優先される
+  theme = "auto",
+  -- 追加の CSS ファイル（組み込みスタイルの後に読み込まれ、上書きできる）
+  custom_css = "",
+  -- [[page]] / [[page|label]] 形式の Wiki リンクを有効にする
+  wiki_links = true,
+  -- Git の HEAD から変更されたブロックをプレビューの左端に色で示す（:MdPreviewDiff で切り替え）
+  git_diff = false,
 
   -- エクスポート設定
   export = {
-    -- PDF エンジン: "typst"（高品質・推奨）| "print"（ブラウザ印刷・依存なし）
+    -- PDF エンジン: "typst"。それ以外にすると :MdPreviewInstall で Typst をダウンロードしない
     pdf_engine  = "typst",
-    -- DOCX/HTML/EPUB エンジン: "pandoc"（推奨）| "none"（無効）
+    -- DOCX/HTML/EPUB エンジン: "pandoc"。それ以外にすると pandoc をダウンロードしない
     docx_engine = "pandoc",
     -- 表示するエクスポート形式（不要なものは削除可）
     formats = { "pdf", "docx", "html", "epub", "markdown" },
     -- バイナリパス（空の場合は自動ダウンロード先 ~/.local/share/nvim/nvim-md-preview/ を使用）
     pandoc_path = "",
     typst_path  = "",
+
+    -- 出力の体裁（PDF は Typst、DOCX/HTML/EPUB は pandoc に反映）
+    paper     = "a4",   -- 用紙サイズ（PDF）: "a4" | "a5" | "us-letter" など Typst の用紙名
+    margin    = "2cm",  -- 余白（PDF）
+    font      = "",     -- 本文フォント（PDF）。空なら Noto Serif CJK JP などを使う
+    font_size = 11,     -- 本文サイズ pt（PDF）
+    toc       = false,  -- 目次を入れる
+    numbering = false,  -- 見出しに番号を付ける
+    -- Typst テンプレート（PDF）。`template` 関数を export した .typ ファイル
+    --   例: #let template(doc) = { set page(header: [社外秘]); doc }
+    template  = "",
   },
 }
 
@@ -41,6 +64,8 @@ local state = {
   buf_id       = nil,  -- 監視中のバッファ ID
   actual_port  = nil,  -- サーバーが実際に使用しているポート（ポート競合時に変わる）
   update_timer = nil,  -- デバウンス用タイマー
+  token        = nil,  -- LAN 公開時のアクセストークン
+  git_base     = {},   -- バッファごとの HEAD の内容（false = Git 管理外）
   attached     = {},   -- nvim_buf_attach 済みのバッファ（二重登録防止）
 }
 
@@ -82,6 +107,56 @@ local function send_update(buf)
   pcall(vim.rpcnotify, state.chan_id, "md_preview_update", content, title, base_dir, file_path)
 end
 
+--- バッファの HEAD 時点の内容を返す（Git 管理外・未コミットなら nil）。結果はバッファごとにキャッシュ
+local function git_base_content(buf)
+  local cached = state.git_base[buf]
+  if cached ~= nil then return cached or nil end
+  local name = vim.api.nvim_buf_get_name(buf)
+  local base = nil
+  if name ~= "" and vim.fn.executable("git") == 1 then
+    local dir = vim.fn.fnamemodify(name, ":h")
+    local file = vim.fn.fnamemodify(name, ":t")
+    local out = vim.fn.system({ "git", "-C", dir, "show", "HEAD:./" .. file })
+    if vim.v.shell_error == 0 then base = out end
+  end
+  state.git_base[buf] = base or false
+  return base
+end
+
+--- HEAD との差分（変更行の範囲）をバイナリに送る
+local function send_diff(buf)
+  if state.chan_id == nil then return end
+  if not M.config.git_diff then
+    pcall(vim.rpcnotify, state.chan_id, "md_preview_diff", {})
+    return
+  end
+  local base = git_base_content(buf)
+  local ranges = {}
+  if base then
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local current = table.concat(lines, "\n") .. "\n"
+    local diff = (vim.text and vim.text.diff) or vim.diff
+    local hunks = diff(base, current, { result_type = "indices" }) or {}
+    local function blank(n) return (lines[n] or ""):match("^%s*$") ~= nil end
+    for _, h in ipairs(hunks) do
+      local _, count_a, start_b, count_b = unpack(h)
+      -- 前後の空行は除く（空行は直前の段落の範囲に含まれるため、別のブロックに印が付いてしまう）
+      local s, e = start_b, start_b + count_b - 1
+      while s <= e and blank(s) do s = s + 1 end
+      while e >= s and blank(e) do e = e - 1 end
+      if count_b == 0 or s > e then
+        -- 削除のみ（または空行だけの変更）: 削除位置（直前の行）に印を付ける
+        if count_a > 0 then
+          table.insert(ranges, { math.max(start_b, 1), math.max(start_b, 1), "del" })
+        end
+      else
+        table.insert(ranges, { s, e, count_a == 0 and "add" or "mod" })
+      end
+    end
+  end
+  pcall(vim.rpcnotify, state.chan_id, "md_preview_diff", ranges)
+end
+
 --- 入力が止まってから send_update する（連続入力で全文送信を繰り返さない）
 local function schedule_update(buf)
   if state.update_timer then
@@ -90,7 +165,10 @@ local function schedule_update(buf)
     state.update_timer = uv.new_timer()
   end
   state.update_timer:start(M.config.debounce_ms or 0, 0, vim.schedule_wrap(function()
-    if state.buf_id == buf and vim.api.nvim_buf_is_valid(buf) then send_update(buf) end
+    if state.buf_id == buf and vim.api.nvim_buf_is_valid(buf) then
+      send_update(buf)
+      send_diff(buf)
+    end
   end))
 end
 
@@ -130,7 +208,32 @@ local function send_export_config()
     end
   end
 
-  pcall(vim.rpcnotify, state.chan_id, "md_preview_config", pandoc_path, typst_path)
+  local ex = M.config.export
+  local custom_css = ""
+  if M.config.custom_css ~= "" then
+    local path = vim.fn.expand(M.config.custom_css)
+    local ok, lines = pcall(vim.fn.readfile, path)
+    if ok then
+      custom_css = table.concat(lines, "\n")
+    else
+      vim.notify("[md-preview] custom_css を読み込めません: " .. path, vim.log.levels.WARN)
+    end
+  end
+
+  pcall(vim.rpcnotify, state.chan_id, "md_preview_config", pandoc_path, typst_path, {
+    theme      = M.config.theme,
+    custom_css = custom_css,
+    wiki_links = M.config.wiki_links,
+    export = {
+      paper     = ex.paper,
+      margin    = ex.margin,
+      font      = ex.font,
+      font_size = ex.font_size,
+      toc       = ex.toc,
+      numbering = ex.numbering,
+      template  = ex.template ~= "" and vim.fn.fnamemodify(vim.fn.expand(ex.template), ":p") or "",
+    },
+  })
 end
 
 --- バッファの変更イベントを購読する
@@ -171,6 +274,7 @@ local function attach_buffer(buf)
 
   -- 初回の内容を即座に送る
   send_update(buf)
+  send_diff(buf)
 end
 
 --- Rust バイナリを起動する
@@ -183,7 +287,13 @@ local function start_binary()
   local cmd = {
     M.config.binary,
     tostring(M.config.port),
+    M.config.host,
   }
+  state.token = nil
+  if not M._is_loopback(M.config.host) then
+    state.token = M._random_token()
+    table.insert(cmd, state.token)
+  end
 
   -- Rust バイナリを RPC ジョブとして起動
   state.job_id = vim.fn.jobstart(cmd, {
@@ -256,12 +366,27 @@ function M.start()
 
   if not start_binary() then return end
 
+  -- 設定（描画オプション・テーマなど）を最初の内容より先に送る。
+  -- RPC は順番どおりに届くので、初回描画から設定が反映される
+  send_export_config()
+
   -- バッファを監視開始
   attach_buffer(buf)
 
+  -- 保存後やコミット後は HEAD の内容を取り直す（FocusGained: 外でコミットした場合）
+  local follow_group = vim.api.nvim_create_augroup("md_preview_follow", { clear = true })
+  vim.api.nvim_create_autocmd({ "BufWritePost", "FocusGained" }, {
+    group = follow_group,
+    callback = function()
+      if not M.config.git_diff or state.buf_id == nil then return end
+      state.git_base = {}
+      send_diff(state.buf_id)
+    end,
+  })
+
   -- 別の Markdown バッファに移動したらプレビュー対象を切り替える
   vim.api.nvim_create_autocmd("BufEnter", {
-    group = vim.api.nvim_create_augroup("md_preview_follow", { clear = true }),
+    group = follow_group,
     callback = function(ev)
       if not M.config.follow_buffer or state.job_id == nil then return end
       if ev.buf == state.buf_id then return end
@@ -287,11 +412,47 @@ function M.start()
   vim.defer_fn(function()
     local port = state.actual_port or M.config.port
     local url = string.format("http://127.0.0.1:%d", port)
+    if state.token then
+      url = url .. "/?token=" .. state.token
+      local lan = M._lan_addresses()
+      if #lan > 0 then
+        local urls = vim.tbl_map(function(ip)
+          return string.format("  http://%s:%d/?token=%s", ip, port, state.token)
+        end, lan)
+        vim.notify("[md-preview] LAN から開く URL:\n" .. table.concat(urls, "\n"), vim.log.levels.INFO)
+      end
+    end
     if M.config.auto_open then
       M._open_browser(url)
     end
     vim.notify("[md-preview] プレビュー開始: " .. url, vim.log.levels.INFO)
   end, 300)
+end
+
+function M._is_loopback(host)
+  return host == "127.0.0.1" or host == "localhost" or host == "::1"
+end
+
+--- 推測できないトークン（32 文字の 16 進数）
+function M._random_token()
+  local ok, bytes = pcall(uv.random, 16)
+  if not ok or type(bytes) ~= "string" then
+    math.randomseed(uv.hrtime() % 2147483647)
+    bytes = ""
+    for _ = 1, 16 do bytes = bytes .. string.char(math.random(0, 255)) end
+  end
+  return (bytes:gsub(".", function(c) return string.format("%02x", c:byte()) end))
+end
+
+--- この端末の LAN の IPv4 アドレス一覧
+function M._lan_addresses()
+  local list = {}
+  for _, addrs in pairs(uv.interface_addresses() or {}) do
+    for _, a in ipairs(addrs) do
+      if a.family == "inet" and not a.internal then table.insert(list, a.ip) end
+    end
+  end
+  return list
 end
 
 --- プレビューを停止する（:MdPreviewStop コマンドから呼び出す）
@@ -315,6 +476,14 @@ function M.stop()
   vim.notify("[md-preview] プレビュー停止", vim.log.levels.INFO)
 end
 
+--- Git 差分の表示を切り替える（:MdPreviewDiff）
+function M.toggle_diff()
+  M.config.git_diff = not M.config.git_diff
+  state.git_base = {}  -- HEAD が変わっているかもしれないので取り直す
+  if state.buf_id then send_diff(state.buf_id) end
+  vim.notify("[md-preview] Git 差分表示: " .. (M.config.git_diff and "ON" or "OFF"), vim.log.levels.INFO)
+end
+
 --- ブラウザでクリックされた行へカーソルを移動する（バイナリから nvim_exec_lua 経由で呼ばれる）
 function M._goto_line(line)
   local buf = state.buf_id
@@ -326,6 +495,29 @@ function M._goto_line(line)
   vim.api.nvim_win_set_cursor(win, { line, 0 })
   -- カーソル行を画面中央に
   vim.api.nvim_win_call(win, function() vim.cmd("normal! zz") end)
+end
+
+--- プレビュー内のローカル Markdown リンク / Wiki リンクを開く（バイナリから呼ばれる）
+--- path はプレビュー中ファイルからの相対パス
+function M._open_link(path)
+  local buf = state.buf_id
+  if buf == nil or not vim.api.nvim_buf_is_valid(buf) then return end
+  local base = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(buf), ":h")
+  local target = vim.fn.fnamemodify(base .. "/" .. path, ":p")
+  -- Wiki リンク [[Page]] は大文字小文字・空白の違いを許して探す
+  if vim.fn.filereadable(target) == 0 then
+    local want = vim.fn.fnamemodify(path, ":t"):lower():gsub("[%s_-]", "")
+    for _, f in ipairs(vim.fn.globpath(base, "**/*.md", false, true)) do
+      if vim.fn.fnamemodify(f, ":t"):lower():gsub("[%s_-]", "") == want then target = f; break end
+    end
+  end
+  if vim.fn.filereadable(target) == 0 then
+    vim.notify("[md-preview] ファイルが見つかりません: " .. path, vim.log.levels.WARN)
+    return
+  end
+  local win = vim.fn.bufwinid(buf)
+  if win ~= -1 then vim.api.nvim_set_current_win(win) end
+  vim.cmd("edit " .. vim.fn.fnameescape(target))
 end
 
 --- エクスポート対応形式
@@ -579,7 +771,8 @@ function M.install(opts)
 
   local target, plat
   if sysname == "Linux" then
-    target, plat = "x86_64-unknown-linux-gnu", "linux"
+    target = is_arm and "aarch64-unknown-linux-gnu" or "x86_64-unknown-linux-gnu"
+    plat   = is_arm and "linux-arm64" or "linux"
   elseif sysname == "Darwin" then
     target = is_arm and "aarch64-apple-darwin" or "x86_64-apple-darwin"
     plat   = is_arm and "macos-arm64" or "macos-x86_64"
