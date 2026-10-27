@@ -75,6 +75,8 @@ pub struct AppState {
     pub theme: Arc<RwLock<String>>,
     /// ユーザー CSS（/custom.css で配信）
     pub custom_css: Arc<RwLock<String>>,
+    /// ブラウザのキーボードショートカット（t / / / Ctrl+F / p）を使う
+    pub browser_keys: Arc<RwLock<bool>>,
     /// アクセス制御（起動時に決まり、以後変わらない）
     pub access: Access,
     /// 最新の差分表示メッセージ（後から接続したブラウザにも送る）
@@ -138,6 +140,7 @@ impl AppState {
             export_opts: Arc::new(RwLock::new(ExportOptions::default())),
             theme: Arc::new(RwLock::new("auto".to_string())),
             custom_css: Arc::new(RwLock::new(String::new())),
+            browser_keys: Arc::new(RwLock::new(true)),
             access,
             latest_diff: Arc::new(RwLock::new(None)),
         }
@@ -376,9 +379,10 @@ fn handle_browser_message(state: &AppState, text: &str) {
 /// /settings — ブラウザの初期設定（テーマなど）
 async fn settings_handler(State(state): State<Arc<AppState>>) -> Response {
     let theme = state.theme.read().await.clone();
+    let browser_keys = *state.browser_keys.read().await;
     (
         [(header::CONTENT_TYPE, "application/json")],
-        serde_json::json!({ "theme": theme }).to_string(),
+        serde_json::json!({ "theme": theme, "browser_keys": browser_keys }).to_string(),
     ).into_response()
 }
 
@@ -1687,9 +1691,19 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       return t === 'auto' ? (prefersDark.matches ? 'dark' : 'light') : t;
     }
     applyTheme(resolveTheme());
+    // キーボードショートカット（t / / / Ctrl+F / p）。browser_keys = false なら使わない。
+    // Vimium などブラウザの Vim 系拡張とキーがぶつかるため、無効にできるようにしている
+    let browserKeys = true;
     fetch('/settings').then(r => r.json()).then(cfg => {
       configuredTheme = cfg.theme || 'auto';
       if (resolveTheme() !== currentTheme) themeBtn.click();
+      browserKeys = cfg.browser_keys !== false;
+      if (!browserKeys) {
+        // ボタンの説明からキーの案内を外す
+        $('tocBtn').title = '目次';
+        $('searchBtn').title = '検索';
+        $('slidesBtn').title = 'プレゼンモード';
+      }
     }).catch(() => {});
     prefersDark.addEventListener('change', () => {
       if (!storedTheme() && configuredTheme === 'auto' && resolveTheme() !== currentTheme) themeBtn.click();
@@ -1798,6 +1812,7 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       if (e.key === 'Escape') closeSearch();
     });
     document.addEventListener('keydown', e => {
+      if (!browserKeys) return;
       const typing = e.target.closest?.('input,textarea');
       if ((e.key === '/' && !typing) || ((e.ctrlKey || e.metaKey) && e.key === 'f')) { e.preventDefault(); openSearch(); }
       else if (e.key === 't' && !typing && !e.ctrlKey && !e.metaKey) $('tocBtn').click();
@@ -1941,7 +1956,7 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
         document.body.classList.remove('print-preview');
       }
       const typing = e.target.closest?.('input,textarea');
-      if (e.key === 'p' && !typing && !e.ctrlKey && !e.metaKey && slidesEl.hidden) { e.preventDefault(); openSlides(); }
+      if (browserKeys && e.key === 'p' && !typing && !e.ctrlKey && !e.metaKey && slidesEl.hidden) { e.preventDefault(); openSlides(); }
     });
     // 印刷時は折りたたみを開き、印刷後に戻す
     let closedDetails = [];

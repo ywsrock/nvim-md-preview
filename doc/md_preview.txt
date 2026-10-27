@@ -107,6 +107,12 @@ Call `require("md_preview").setup(opts)`. All keys are optional; defaults:
         `true`. Render `[[Page]]` and `[[Page|label]]` as links. `.md` is
         added when the target has no extension.
 
+    browser_keys                                  *md-preview-browser_keys*
+        `true`. Keyboard shortcuts in the preview page: `t`, `/`, CTRL-F and
+        `p` (see |md-preview-keys|). Set `false` when they clash with a
+        Vim-style browser extension such as Vimium or Tridactyl; the
+        toolbar buttons keep working.
+
     git_diff                                          *md-preview-git_diff*
         `false`. Mark added, modified and deleted blocks compared with Git
         `HEAD`. Toggle with |:MdPreviewDiff|.
@@ -128,6 +134,12 @@ Vimscript: `g:md_preview_port` and `g:md_preview_auto_open` are also read.
                     when there is none. Arrow keys move, `f` fullscreen,
                     <Esc> exits. The slide follows the editor cursor.
     click           Jump to that line in Neovim.
+
+`t`, `/`, CTRL-F and `p` are disabled when |md-preview-browser_keys| is
+`false`. Vim-style browser extensions (Vimium, Tridactyl, Surfingkeys) use
+the same keys and usually receive them first. Either set `browser_keys =
+false` and use the toolbar buttons, or exclude `http://127.0.0.1:*/*` in the
+extension (Vimium: excluded URLs, Tridactyl: `:blacklistadd 127.0.0.1`).
 
 The print button shows the page on an A4 sheet with page-break guides; press
 it again to print.

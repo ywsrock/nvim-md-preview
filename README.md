@@ -88,6 +88,8 @@ Keys in the browser:
 | `p` | Presentation mode (arrows to move, `f` fullscreen, Esc to exit) |
 | Click a paragraph | Jump to that line in Neovim |
 
+The toolbar buttons do the same. If these keys clash with a browser extension, set `browser_keys = false` (see [FAQ](#faq)).
+
 ## Configuration
 
 Defaults are shown. Pass only what you want to change.
@@ -103,6 +105,7 @@ require("md_preview").setup({
   theme = "auto",         -- "auto" (follow the OS) | "dark" | "light"
   custom_css = "",        -- path to a CSS file loaded after the built-in styles
   wiki_links = true,      -- render [[Page]] links
+  browser_keys = true,    -- keyboard shortcuts in the preview (t, /, Ctrl+F, p); false if they clash with a Vim extension
   git_diff = false,       -- mark blocks changed since HEAD (toggle with :MdPreviewDiff)
 
   export = {
@@ -139,6 +142,34 @@ Vimscript users can set `g:md_preview_port` and `g:md_preview_auto_open`.
 ### Viewing from a tablet or another computer
 
 Set `host = "0.0.0.0"`. Each time the preview starts, a random token is generated and the LAN URLs are shown in Neovim. Only those URLs (or a browser that already opened one) can access the preview.
+
+## FAQ
+
+### The keyboard shortcuts in the preview do nothing, or open a new tab instead
+
+Browser extensions that add Vim-style keys, such as Vimium, Vimium C, Tridactyl and Surfingkeys, use the same keys as the preview:
+
+| Key | Preview | Vim-style extensions |
+|---|---|---|
+| `t` | Table of contents | Open a new tab (Vimium, Tridactyl) |
+| `/` | Search | Find in page (Vimium), quick find (Firefox) |
+| `p` | Presentation mode | Open the clipboard URL (Vimium, Tridactyl) |
+| `f` (in slides) | Fullscreen | Link hints |
+
+The extension usually receives the key first, so the preview never sees it. You can do either of these:
+
+- **Turn off the preview's shortcuts** and use the toolbar buttons instead:
+
+  ```lua
+  require("md_preview").setup({ browser_keys = false })
+  ```
+
+- **Turn off the extension on the preview page** so the preview's keys work:
+  - Vimium / Vimium C: in the options, add an excluded URL rule for `http://127.0.0.1:*/*`. To keep the extension and only pass some keys through, put them in "Keys", for example `t / p`.
+  - Tridactyl: run `:blacklistadd 127.0.0.1`.
+  - Surfingkeys: add `settings.blocklistPattern = /127\.0\.0\.1/;` to your settings.
+
+  If you changed `port` or use LAN mode, adjust the address accordingly.
 
 ## How it works
 

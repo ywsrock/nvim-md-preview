@@ -30,6 +30,9 @@ M.config = {
   custom_css = "",
   -- [[page]] / [[page|label]] 形式の Wiki リンクを有効にする
   wiki_links = true,
+  -- プレビュー画面のキーボードショートカット（t: 目次 / "/" と Ctrl+F: 検索 / p: プレゼンモード）
+  --   Vimium などブラウザの Vim 系拡張とキーがぶつかる場合は false にする（ボタンは使える）
+  browser_keys = true,
   -- Git の HEAD から変更されたブロックをプレビューの左端に色で示す（:MdPreviewDiff で切り替え）
   git_diff = false,
 
@@ -224,6 +227,7 @@ local function send_export_config()
     theme      = M.config.theme,
     custom_css = custom_css,
     wiki_links = M.config.wiki_links,
+    browser_keys = M.config.browser_keys,
     export = {
       paper     = ex.paper,
       margin    = ex.margin,
