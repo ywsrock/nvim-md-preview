@@ -74,6 +74,7 @@ async fn dispatch(state: &Arc<AppState>, msg: rmpv::Value) {
         "md_preview_update" => handle_update(state, params).await,
         "md_preview_scroll" => handle_scroll(state, params),
         "md_preview_config" => handle_config(state, params).await,
+        "md_preview_diff" => handle_diff(state, params).await,
         "md_preview_export" => {
             // 変換は時間がかかるので RPC ループを止めないよう別タスクで実行
             let state = Arc::clone(state);
@@ -204,6 +205,22 @@ async fn handle_export(state: &AppState, params: &[rmpv::Value]) {
     );
 }
 
+/// `md_preview_diff` 処理 — Git の HEAD との差分（変更行の範囲）を受け取ってブラウザに送る
+/// params: [ranges]  ranges = [[start, end, kind], ...]（kind: "add" | "mod" | "del"）。空配列で表示を消す
+async fn handle_diff(state: &AppState, params: &[rmpv::Value]) {
+    let ranges: Vec<serde_json::Value> = params.first()
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|r| {
+            let r = r.as_array()?;
+            let num = |v: &rmpv::Value| v.as_u64().or_else(|| v.as_i64().map(|n| n.max(0) as u64));
+            Some(serde_json::json!([num(r.first()?)?, num(r.get(1)?)?, r.get(2)?.as_str()?]))
+        }).collect())
+        .unwrap_or_default();
+    let payload = serde_json::json!({ "type": "diff", "ranges": ranges }).to_string();
+    *state.latest_diff.write().await = Some(payload.clone());
+    state.send_scroll(payload);
+}
+
 /// `md_preview_scroll` 処理
 fn handle_scroll(state: &AppState, params: &[rmpv::Value]) {
     // Neovim は整数を符号付き(i64)または符号なし(u64)で送る場合がある
@@ -221,19 +238,28 @@ fn handle_scroll(state: &AppState, params: &[rmpv::Value]) {
 
 #[tokio::main]
 async fn main() {
+    // 引数: <port> [host] [token]
     let args: Vec<String> = std::env::args().collect();
     let port: u16 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(DEFAULT_PORT);
+    let host = args.get(2).cloned().unwrap_or_else(|| "127.0.0.1".to_string());
+    let token = args.get(3).filter(|t| !t.is_empty()).cloned();
+    let lan = !matches!(host.as_str(), "127.0.0.1" | "localhost" | "::1");
+    if lan && token.is_none() {
+        eprintln!("LAN に公開する場合はトークンが必要です");
+        std::process::exit(2);
+    }
+    let access = server::Access { lan, token };
 
     let (tx, _rx) = broadcast::channel::<String>(16);
     let (nvim_tx, nvim_rx) = mpsc::unbounded_channel::<NvimNotify>();
-    let state = Arc::new(AppState::new(tx, nvim_tx));
+    let state = Arc::new(AppState::new(tx, nvim_tx, access));
 
     tokio::spawn(run_nvim_writer(nvim_rx));
 
     {
         let state_server = Arc::clone(&state);
         tokio::spawn(async move {
-            server::start_server(port, state_server).await;
+            server::start_server(&host, port, state_server).await;
         });
     }
 

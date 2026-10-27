@@ -13,6 +13,9 @@ M.config = {
   binary = vim.fn.stdpath("data") .. "/nvim-md-preview/nvim-md-preview"
     .. (vim.fn.has("win32") == 1 and ".exe" or ""),
   port = 9876,
+  -- 待ち受けアドレス。"0.0.0.0" にすると LAN 内の別端末（タブレットなど）から見られる。
+  --   その場合は毎回ランダムなトークンを発行し、トークン付き URL でしか開けない
+  host = "127.0.0.1",
   auto_open = true,
   -- カーソル移動に合わせてプレビューをスクロールする
   scroll_sync = true,
@@ -27,6 +30,8 @@ M.config = {
   custom_css = "",
   -- [[page]] / [[page|label]] 形式の Wiki リンクを有効にする
   wiki_links = true,
+  -- Git の HEAD から変更されたブロックをプレビューの左端に色で示す（:MdPreviewDiff で切り替え）
+  git_diff = false,
 
   -- エクスポート設定
   export = {
@@ -59,6 +64,8 @@ local state = {
   buf_id       = nil,  -- 監視中のバッファ ID
   actual_port  = nil,  -- サーバーが実際に使用しているポート（ポート競合時に変わる）
   update_timer = nil,  -- デバウンス用タイマー
+  token        = nil,  -- LAN 公開時のアクセストークン
+  git_base     = {},   -- バッファごとの HEAD の内容（false = Git 管理外）
   attached     = {},   -- nvim_buf_attach 済みのバッファ（二重登録防止）
 }
 
@@ -100,6 +107,56 @@ local function send_update(buf)
   pcall(vim.rpcnotify, state.chan_id, "md_preview_update", content, title, base_dir, file_path)
 end
 
+--- バッファの HEAD 時点の内容を返す（Git 管理外・未コミットなら nil）。結果はバッファごとにキャッシュ
+local function git_base_content(buf)
+  local cached = state.git_base[buf]
+  if cached ~= nil then return cached or nil end
+  local name = vim.api.nvim_buf_get_name(buf)
+  local base = nil
+  if name ~= "" and vim.fn.executable("git") == 1 then
+    local dir = vim.fn.fnamemodify(name, ":h")
+    local file = vim.fn.fnamemodify(name, ":t")
+    local out = vim.fn.system({ "git", "-C", dir, "show", "HEAD:./" .. file })
+    if vim.v.shell_error == 0 then base = out end
+  end
+  state.git_base[buf] = base or false
+  return base
+end
+
+--- HEAD との差分（変更行の範囲）をバイナリに送る
+local function send_diff(buf)
+  if state.chan_id == nil then return end
+  if not M.config.git_diff then
+    pcall(vim.rpcnotify, state.chan_id, "md_preview_diff", {})
+    return
+  end
+  local base = git_base_content(buf)
+  local ranges = {}
+  if base then
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local current = table.concat(lines, "\n") .. "\n"
+    local diff = (vim.text and vim.text.diff) or vim.diff
+    local hunks = diff(base, current, { result_type = "indices" }) or {}
+    local function blank(n) return (lines[n] or ""):match("^%s*$") ~= nil end
+    for _, h in ipairs(hunks) do
+      local _, count_a, start_b, count_b = unpack(h)
+      -- 前後の空行は除く（空行は直前の段落の範囲に含まれるため、別のブロックに印が付いてしまう）
+      local s, e = start_b, start_b + count_b - 1
+      while s <= e and blank(s) do s = s + 1 end
+      while e >= s and blank(e) do e = e - 1 end
+      if count_b == 0 or s > e then
+        -- 削除のみ（または空行だけの変更）: 削除位置（直前の行）に印を付ける
+        if count_a > 0 then
+          table.insert(ranges, { math.max(start_b, 1), math.max(start_b, 1), "del" })
+        end
+      else
+        table.insert(ranges, { s, e, count_a == 0 and "add" or "mod" })
+      end
+    end
+  end
+  pcall(vim.rpcnotify, state.chan_id, "md_preview_diff", ranges)
+end
+
 --- 入力が止まってから send_update する（連続入力で全文送信を繰り返さない）
 local function schedule_update(buf)
   if state.update_timer then
@@ -108,7 +165,10 @@ local function schedule_update(buf)
     state.update_timer = uv.new_timer()
   end
   state.update_timer:start(M.config.debounce_ms or 0, 0, vim.schedule_wrap(function()
-    if state.buf_id == buf and vim.api.nvim_buf_is_valid(buf) then send_update(buf) end
+    if state.buf_id == buf and vim.api.nvim_buf_is_valid(buf) then
+      send_update(buf)
+      send_diff(buf)
+    end
   end))
 end
 
@@ -214,6 +274,7 @@ local function attach_buffer(buf)
 
   -- 初回の内容を即座に送る
   send_update(buf)
+  send_diff(buf)
 end
 
 --- Rust バイナリを起動する
@@ -226,7 +287,13 @@ local function start_binary()
   local cmd = {
     M.config.binary,
     tostring(M.config.port),
+    M.config.host,
   }
+  state.token = nil
+  if not M._is_loopback(M.config.host) then
+    state.token = M._random_token()
+    table.insert(cmd, state.token)
+  end
 
   -- Rust バイナリを RPC ジョブとして起動
   state.job_id = vim.fn.jobstart(cmd, {
@@ -306,9 +373,20 @@ function M.start()
   -- バッファを監視開始
   attach_buffer(buf)
 
+  -- 保存後やコミット後は HEAD の内容を取り直す（FocusGained: 外でコミットした場合）
+  local follow_group = vim.api.nvim_create_augroup("md_preview_follow", { clear = true })
+  vim.api.nvim_create_autocmd({ "BufWritePost", "FocusGained" }, {
+    group = follow_group,
+    callback = function()
+      if not M.config.git_diff or state.buf_id == nil then return end
+      state.git_base = {}
+      send_diff(state.buf_id)
+    end,
+  })
+
   -- 別の Markdown バッファに移動したらプレビュー対象を切り替える
   vim.api.nvim_create_autocmd("BufEnter", {
-    group = vim.api.nvim_create_augroup("md_preview_follow", { clear = true }),
+    group = follow_group,
     callback = function(ev)
       if not M.config.follow_buffer or state.job_id == nil then return end
       if ev.buf == state.buf_id then return end
@@ -334,11 +412,47 @@ function M.start()
   vim.defer_fn(function()
     local port = state.actual_port or M.config.port
     local url = string.format("http://127.0.0.1:%d", port)
+    if state.token then
+      url = url .. "/?token=" .. state.token
+      local lan = M._lan_addresses()
+      if #lan > 0 then
+        local urls = vim.tbl_map(function(ip)
+          return string.format("  http://%s:%d/?token=%s", ip, port, state.token)
+        end, lan)
+        vim.notify("[md-preview] LAN から開く URL:\n" .. table.concat(urls, "\n"), vim.log.levels.INFO)
+      end
+    end
     if M.config.auto_open then
       M._open_browser(url)
     end
     vim.notify("[md-preview] プレビュー開始: " .. url, vim.log.levels.INFO)
   end, 300)
+end
+
+function M._is_loopback(host)
+  return host == "127.0.0.1" or host == "localhost" or host == "::1"
+end
+
+--- 推測できないトークン（32 文字の 16 進数）
+function M._random_token()
+  local ok, bytes = pcall(uv.random, 16)
+  if not ok or type(bytes) ~= "string" then
+    math.randomseed(uv.hrtime() % 2147483647)
+    bytes = ""
+    for _ = 1, 16 do bytes = bytes .. string.char(math.random(0, 255)) end
+  end
+  return (bytes:gsub(".", function(c) return string.format("%02x", c:byte()) end))
+end
+
+--- この端末の LAN の IPv4 アドレス一覧
+function M._lan_addresses()
+  local list = {}
+  for _, addrs in pairs(uv.interface_addresses() or {}) do
+    for _, a in ipairs(addrs) do
+      if a.family == "inet" and not a.internal then table.insert(list, a.ip) end
+    end
+  end
+  return list
 end
 
 --- プレビューを停止する（:MdPreviewStop コマンドから呼び出す）
@@ -360,6 +474,14 @@ function M.stop()
     state.update_timer = nil
   end
   vim.notify("[md-preview] プレビュー停止", vim.log.levels.INFO)
+end
+
+--- Git 差分の表示を切り替える（:MdPreviewDiff）
+function M.toggle_diff()
+  M.config.git_diff = not M.config.git_diff
+  state.git_base = {}  -- HEAD が変わっているかもしれないので取り直す
+  if state.buf_id then send_diff(state.buf_id) end
+  vim.notify("[md-preview] Git 差分表示: " .. (M.config.git_diff and "ON" or "OFF"), vim.log.levels.INFO)
 end
 
 --- ブラウザでクリックされた行へカーソルを移動する（バイナリから nvim_exec_lua 経由で呼ばれる）
