@@ -33,6 +33,20 @@ require("md_preview").setup({ binary = vim.fn.getcwd() .. "/target/release/nvim-
 
 The preview page is embedded in `src/server.rs`, so rebuild the binary after changing HTML, CSS or JS.
 
+### Browser tests
+
+`tests/e2e` starts the preview in a headless Neovim for each test and checks it in Chromium with Playwright: rendering, typing, scroll sync, click-to-jump, the toolbar, slides, search, the Git diff, the Export menu and the server's access checks. They need Node.js and the release binary:
+
+```bash
+cargo build --release
+cd tests/e2e
+npm ci
+npx playwright install chromium
+npx playwright test
+```
+
+Add a test here when you fix a bug that can only be seen in the browser. Set `MD_PREVIEW_BINARY` to run the tests against another binary.
+
 ## Embedded libraries
 
 `download-libs.sh` fetches Mermaid, KaTeX and highlight.js into `src/embedded_lib/` and checks each file against a pinned SHA-256 checksum. To update a library, change its `*_VERSION` in the script, run `bash download-libs.sh --update-checksums`, paste the printed lines into `CHECKSUMS`, and run the script again to confirm it passes. Check the upstream changelog before bumping a major version.
@@ -40,7 +54,7 @@ The preview page is embedded in `src/server.rs`, so rebuild the binary after cha
 ## Pull requests
 
 - Keep each PR focused on one change and describe how you verified it.
-- CI runs the build, Rust tests, clippy with `-D warnings` and the Lua smoke test. Please make sure they pass locally.
+- CI runs the build and Rust tests on Linux, macOS and Windows, clippy with `-D warnings`, the Lua smoke test on all three, and the browser tests. Please make sure they pass locally.
 - Add a unit test in `src/markdown.rs` when you change Markdown rendering.
 - Update `README.md`, `README.ja.md` and `doc/md_preview.txt` when you add or change options or commands.
 - Add an entry under "Unreleased" in `CHANGELOG.md`.

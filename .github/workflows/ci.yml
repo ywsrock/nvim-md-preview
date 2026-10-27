@@ -13,7 +13,11 @@ permissions:
 
 jobs:
   rust:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -29,10 +33,11 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: cargo-ci-${{ hashFiles('Cargo.lock') }}
+          key: cargo-ci-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
 
-      # build.rs が src/embedded_lib/ の存在を要求する
+      # build.rs が src/embedded_lib/ の存在を要求する（Windows も Git for Windows の bash で同じスクリプトを使う）
       - name: Download JS libraries
+        shell: bash
         run: bash download-libs.sh
 
       - name: Build
@@ -42,10 +47,15 @@ jobs:
         run: cargo test --release
 
       - name: Clippy
+        if: runner.os == 'Linux'
         run: cargo clippy --release -- -D warnings
 
   lua:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -56,6 +66,7 @@ jobs:
 
       # :MdPreviewInstall はプラグインの版の Release を取得するので、両方の版がずれないようにする
       - name: Version check
+        if: runner.os == 'Linux'
         run: |
           CARGO=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
           LUA=$(sed -n 's/^M.version = "\(.*\)"$/\1/p' lua/md_preview.lua)
@@ -64,3 +75,59 @@ jobs:
 
       - name: Smoke test
         run: nvim --headless -u NONE -c "luafile tests/smoke.lua" -c "qa!"
+
+  # プレビューを headless の Neovim で起動し、ブラウザで動作を確かめる（tests/e2e）
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-e2e-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Download JS libraries
+        run: bash download-libs.sh
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Install Neovim
+        uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tests/e2e/package-lock.json
+
+      - name: Install Playwright
+        working-directory: tests/e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run browser tests
+        working-directory: tests/e2e
+        run: npx playwright test
+
+      - name: Upload report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            tests/e2e/playwright-report
+            tests/e2e/test-results
+          retention-days: 7

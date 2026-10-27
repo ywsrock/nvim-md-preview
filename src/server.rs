@@ -796,6 +796,8 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       --color-note:#0969da;--color-tip:#1a7f37;--color-important:#8250df;--color-warning:#9a6700;--color-caution:#d1242f;
     }
     *,*::before,*::after{box-sizing:border-box}
+    /* hidden 属性は display を指定した要素にも必ず効かせる（Export メニューの項目などを隠すため） */
+    [hidden]{display:none!important}
     html{scrollbar-width:thin;scrollbar-color:var(--scroll-thumb) transparent}
     /* body の高さを画面に固定すると、画面 1 つ分スクロールした所でヘッダーの sticky が外れるので min-height にする */
     html{height:100%}
