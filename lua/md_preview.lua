@@ -259,20 +259,12 @@ function M.install()
     target = (machine == "arm64" or machine == "aarch64")
       and "aarch64-apple-darwin" or "x86_64-apple-darwin"
   else
-    -- Windows ネイティブは未対応。WSL を使用してください。
-    vim.notify(
-      "[md-preview] Windows ネイティブバイナリは未対応です。\n"
-      .. "WSL (Windows Subsystem for Linux) を使用して Linux バイナリを取得してください:\n"
-      .. "  1. WSL を開く\n"
-      .. "  2. nvim を WSL 内で起動\n"
-      .. "  3. :MdPreviewInstall を実行",
-      vim.log.levels.ERROR
-    )
-    return false
+    -- Windows / WSL
+    target = "x86_64-pc-windows-msvc"
   end
 
-  local is_win  = false  -- Windows ネイティブは未対応
-  local ext     = ""
+  local is_win  = sysname:match("Windows") ~= nil or vim.fn.has("win32") == 1
+  local ext     = is_win and ".exe" or ""
   local repo    = "ywsrock/nvim-md-preview"
   local fname   = "nvim-md-preview-" .. target .. ext
   local url     = string.format(
