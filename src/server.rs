@@ -774,6 +774,8 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       --skeleton:rgba(255,255,255,.04);--skeleton-shine:rgba(255,255,255,.08);
       --color-h1:#58a6ff;--color-h2:#a371f7;--color-h3:#3fb950;
       --color-h4:#39d2c0;--color-h5:#d29922;--color-h6:#8b949e;
+      /* GitHub Alerts / callout の色（GitHub と同じ配色） */
+      --color-note:#4493f8;--color-tip:#3fb950;--color-important:#ab7df8;--color-warning:#d29922;--color-caution:#f85149;
     }
     [data-theme="light"] {
       --bg:#fff;--panel:#f6f8fa;--stroke:#d0d7de;--fg:#1f2328;--fg-muted:#656d76;
@@ -785,10 +787,13 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       --skeleton:rgba(0,0,0,.04);--skeleton-shine:rgba(0,0,0,.07);
       --color-h1:#0969da;--color-h2:#8250df;--color-h3:#1a7f37;
       --color-h4:#0e8a7e;--color-h5:#9a6700;--color-h6:#656d76;
+      --color-note:#0969da;--color-tip:#1a7f37;--color-important:#8250df;--color-warning:#9a6700;--color-caution:#d1242f;
     }
     *,*::before,*::after{box-sizing:border-box}
     html{scrollbar-width:thin;scrollbar-color:var(--scroll-thumb) transparent}
-    html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);
+    /* body の高さを画面に固定すると、画面 1 つ分スクロールした所でヘッダーの sticky が外れるので min-height にする */
+    html{height:100%}
+    html,body{min-height:100%;margin:0;background:var(--bg);color:var(--fg);
       font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Helvetica,Arial,sans-serif;
       line-height:1.6;-webkit-font-smoothing:antialiased}
     header{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:.6rem;
@@ -826,57 +831,57 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
     /* content */
     #content{max-width:900px;margin:0 auto;padding:2rem 2rem 4rem;animation:fadeIn .2s ease}
     @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
-    #content>*:first-child{margin-top:0}
-    #content h1,#content h2,#content h3,#content h4,#content h5,#content h6{
+    :is(#content,#slideBody)>*:first-child{margin-top:0}
+    :is(#content,#slideBody) h1,:is(#content,#slideBody) h2,:is(#content,#slideBody) h3,:is(#content,#slideBody) h4,:is(#content,#slideBody) h5,:is(#content,#slideBody) h6{
       position:relative;scroll-margin-top:3.2rem}
-    #content h1{font-size:2em;border-bottom:1px solid var(--stroke);
+    :is(#content,#slideBody) h1{font-size:2em;border-bottom:1px solid var(--stroke);
       border-left:3px solid var(--color-h1);padding-bottom:.3em;padding-left:.6em;margin:1.5em 0 .5em}
-    #content h2{font-size:1.5em;border-bottom:1px solid var(--stroke);
+    :is(#content,#slideBody) h2{font-size:1.5em;border-bottom:1px solid var(--stroke);
       border-left:3px solid var(--color-h2);padding-bottom:.25em;padding-left:.6em;margin:1.4em 0 .5em}
-    #content h3{font-size:1.25em;border-left:3px solid var(--color-h3);padding-left:.6em;margin:1.3em 0 .4em}
-    #content h4{font-size:1em;border-left:3px solid var(--color-h4);padding-left:.6em;margin:1.2em 0 .4em}
-    #content h5,#content h6{font-size:.875em;color:var(--fg-muted);padding-left:.6em;margin:1em 0 .4em}
-    #content h5{border-left:3px solid var(--color-h5)}
-    #content h6{border-left:3px solid var(--color-h6)}
-    #content p{margin:0 0 1em}
-    #content .math-display{display:block;overflow-x:auto;margin:1em 0}
-    #content a{color:var(--link);text-decoration:none}
-    #content a:hover{text-decoration:underline}
-    #content strong{font-weight:600}
-    #content img{max-width:100%;border-radius:6px}
-    #content hr{height:3px;background:var(--stroke);border:none;margin:1.5em 0}
-    #content ul,#content ol{padding-left:2em;margin:0 0 1em}
-    #content li+li{margin-top:.25em}
-    #content .task-list-item{list-style:none;margin-left:-1.5em}
-    #content .task-list-item input[type="checkbox"]{margin-right:.4em}
-    #content blockquote{margin:0 0 1em;padding:.5em 1em;
+    :is(#content,#slideBody) h3{font-size:1.25em;border-left:3px solid var(--color-h3);padding-left:.6em;margin:1.3em 0 .4em}
+    :is(#content,#slideBody) h4{font-size:1em;border-left:3px solid var(--color-h4);padding-left:.6em;margin:1.2em 0 .4em}
+    :is(#content,#slideBody) h5,:is(#content,#slideBody) h6{font-size:.875em;color:var(--fg-muted);padding-left:.6em;margin:1em 0 .4em}
+    :is(#content,#slideBody) h5{border-left:3px solid var(--color-h5)}
+    :is(#content,#slideBody) h6{border-left:3px solid var(--color-h6)}
+    :is(#content,#slideBody) p{margin:0 0 1em}
+    :is(#content,#slideBody) .math-display{display:block;overflow-x:auto;margin:1em 0}
+    :is(#content,#slideBody) a{color:var(--link);text-decoration:none}
+    :is(#content,#slideBody) a:hover{text-decoration:underline}
+    :is(#content,#slideBody) strong{font-weight:600}
+    :is(#content,#slideBody) img{max-width:100%;border-radius:6px}
+    :is(#content,#slideBody) hr{height:3px;background:var(--stroke);border:none;margin:1.5em 0}
+    :is(#content,#slideBody) ul,:is(#content,#slideBody) ol{padding-left:2em;margin:0 0 1em}
+    :is(#content,#slideBody) li+li{margin-top:.25em}
+    :is(#content,#slideBody) .task-list-item{list-style:none;margin-left:-1.5em}
+    :is(#content,#slideBody) .task-list-item input[type="checkbox"]{margin-right:.4em}
+    :is(#content,#slideBody) blockquote{margin:0 0 1em;padding:.5em 1em;
       border-left:4px solid var(--blockquote-border);color:var(--fg-muted)}
-    #content blockquote>*:last-child{margin-bottom:0}
-    #content table{width:100%;border-collapse:collapse;margin:0 0 1em;font-size:.9em}
-    #content th,#content td{padding:.5em .8em;border:1px solid var(--table-border)}
-    #content th{background:var(--panel);font-weight:600}
-    #content tr:nth-child(even){background:var(--table-row-alt)}
-    #content code{background:var(--code-bg);padding:.15em .35em;border-radius:4px;
+    :is(#content,#slideBody) blockquote>*:last-child{margin-bottom:0}
+    :is(#content,#slideBody) table{width:100%;border-collapse:collapse;margin:0 0 1em;font-size:.9em}
+    :is(#content,#slideBody) th,:is(#content,#slideBody) td{padding:.5em .8em;border:1px solid var(--table-border)}
+    :is(#content,#slideBody) th{background:var(--panel);font-weight:600}
+    :is(#content,#slideBody) tr:nth-child(even){background:var(--table-row-alt)}
+    :is(#content,#slideBody) code{background:var(--code-bg);padding:.15em .35em;border-radius:4px;
       font-size:.88em;font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace}
-    #content pre{position:relative;background:var(--code-bg);border:1px solid var(--stroke);
+    :is(#content,#slideBody) pre{position:relative;background:var(--code-bg);border:1px solid var(--stroke);
       border-radius:8px;padding:1em;overflow-x:auto;margin:0 0 1em;
       scrollbar-width:thin;scrollbar-color:var(--scroll-thumb) transparent}
-    #content pre code{background:none;padding:0;border-radius:0;font-size:.85em;line-height:1.55}
+    :is(#content,#slideBody) pre code{background:none;padding:0;border-radius:0;font-size:.85em;line-height:1.55}
     /* code wrap with lang badge + copy btn */
-    #content .code-wrap{position:relative;margin:0 0 1em}
-    #content .code-wrap pre{margin:0}
-    #content .code-wrap .code-lang{position:absolute;top:0;right:0;padding:.2em .6em;
+    :is(#content,#slideBody) .code-wrap{position:relative;margin:0 0 1em}
+    :is(#content,#slideBody) .code-wrap pre{margin:0}
+    :is(#content,#slideBody) .code-wrap .code-lang{position:absolute;top:0;right:0;padding:.2em .6em;
       font-size:.68rem;color:var(--badge-fg);background:var(--badge-bg);
       border-bottom-left-radius:6px;border-top-right-radius:7px;
       text-transform:uppercase;letter-spacing:.5px;font-weight:500;line-height:1.4;pointer-events:none;z-index:2}
-    #content .code-wrap .copy-btn{position:absolute;top:6px;right:6px;width:28px;height:28px;
+    :is(#content,#slideBody) .code-wrap .copy-btn{position:absolute;top:6px;right:6px;width:28px;height:28px;
       display:flex;align-items:center;justify-content:center;
       background:var(--panel);border:1px solid var(--stroke);border-radius:6px;
       cursor:pointer;opacity:0;transition:opacity .15s,background .15s;color:var(--fg-muted);padding:0;z-index:2}
-    #content .code-wrap:hover .copy-btn{opacity:1}
-    #content .code-wrap .copy-btn:hover{color:var(--fg);background:rgba(127,127,127,.15)}
-    #content .code-wrap .copy-btn.copied{color:#3fb950}
-    #content .code-wrap .code-lang ~ .copy-btn{top:26px}
+    :is(#content,#slideBody) .code-wrap:hover .copy-btn{opacity:1}
+    :is(#content,#slideBody) .code-wrap .copy-btn:hover{color:var(--fg);background:rgba(127,127,127,.15)}
+    :is(#content,#slideBody) .code-wrap .copy-btn.copied{color:#3fb950}
+    :is(#content,#slideBody) .code-wrap .code-lang ~ .copy-btn{top:26px}
     /* mermaid */
     .mermaid-block{position:relative;margin:1em 0;border:1px solid var(--stroke);
       border-radius:10px;background:var(--panel);overflow:hidden;min-height:60px}
@@ -922,41 +927,41 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       border-top:none;border-radius:0 0 8px 8px;white-space:pre-wrap;
       color:var(--fg-muted);font-size:.82rem;background:var(--panel)}
     /* GitHub Alerts */
-    #content .markdown-alert{padding:.5rem 1em;margin-bottom:16px;
+    :is(#content,#slideBody) .markdown-alert{padding:.5rem 1em;margin-bottom:16px;
       border-left:.25em solid #888;border-radius:0 6px 6px 0;background:var(--badge-bg)}
-    #content .markdown-alert>:first-child{margin-top:0}
-    #content .markdown-alert>:last-child{margin-bottom:0}
-    #content .markdown-alert-title{display:flex;font-weight:500;align-items:center;
+    :is(#content,#slideBody) .markdown-alert>:first-child{margin-top:0}
+    :is(#content,#slideBody) .markdown-alert>:last-child{margin-bottom:0}
+    :is(#content,#slideBody) .markdown-alert-title{display:flex;font-weight:500;align-items:center;
       line-height:1;margin-bottom:.5em;gap:.4em}
-    #content .markdown-alert-note  {border-left-color:var(--color-note)}
-    #content .markdown-alert-note   .markdown-alert-title{color:var(--color-note)}
-    #content .markdown-alert-tip   {border-left-color:var(--color-tip)}
-    #content .markdown-alert-tip    .markdown-alert-title{color:var(--color-tip)}
-    #content .markdown-alert-warning{border-left-color:var(--color-warning)}
-    #content .markdown-alert-warning .markdown-alert-title{color:var(--color-warning)}
-    #content .markdown-alert-caution{border-left-color:var(--color-caution)}
-    #content .markdown-alert-caution .markdown-alert-title{color:var(--color-caution)}
-    #content .markdown-alert-important{border-left-color:var(--color-important)}
-    #content .markdown-alert-important .markdown-alert-title{color:var(--color-important)}
+    :is(#content,#slideBody) .markdown-alert-note  {border-left-color:var(--color-note)}
+    :is(#content,#slideBody) .markdown-alert-note   .markdown-alert-title{color:var(--color-note)}
+    :is(#content,#slideBody) .markdown-alert-tip   {border-left-color:var(--color-tip)}
+    :is(#content,#slideBody) .markdown-alert-tip    .markdown-alert-title{color:var(--color-tip)}
+    :is(#content,#slideBody) .markdown-alert-warning{border-left-color:var(--color-warning)}
+    :is(#content,#slideBody) .markdown-alert-warning .markdown-alert-title{color:var(--color-warning)}
+    :is(#content,#slideBody) .markdown-alert-caution{border-left-color:var(--color-caution)}
+    :is(#content,#slideBody) .markdown-alert-caution .markdown-alert-title{color:var(--color-caution)}
+    :is(#content,#slideBody) .markdown-alert-important{border-left-color:var(--color-important)}
+    :is(#content,#slideBody) .markdown-alert-important .markdown-alert-title{color:var(--color-important)}
     /* Obsidian 形式の callout（GitHub Alerts の 5 種以外） */
-    #content .markdown-alert-info{border-left-color:var(--color-note)}
-    #content .markdown-alert-info .markdown-alert-title{color:var(--color-note)}
-    #content .markdown-alert-success{border-left-color:var(--color-tip)}
-    #content .markdown-alert-success .markdown-alert-title{color:var(--color-tip)}
-    #content .markdown-alert-question{border-left-color:var(--color-warning)}
-    #content .markdown-alert-question .markdown-alert-title{color:var(--color-warning)}
-    #content .markdown-alert-bug,#content .markdown-alert-failure{border-left-color:var(--color-caution)}
-    #content .markdown-alert-bug .markdown-alert-title,#content .markdown-alert-failure .markdown-alert-title{color:var(--color-caution)}
-    #content .markdown-alert-example,#content .markdown-alert-abstract,#content .markdown-alert-todo{border-left-color:var(--color-important)}
-    #content .markdown-alert-example .markdown-alert-title,#content .markdown-alert-abstract .markdown-alert-title,#content .markdown-alert-todo .markdown-alert-title{color:var(--color-important)}
-    #content .markdown-alert-quote{border-left-color:var(--fg-muted)}
-    #content details.markdown-alert>summary{cursor:pointer;list-style:none}
-    #content details.markdown-alert>summary::-webkit-details-marker{display:none}
-    #content details.markdown-alert>summary::after{content:'▸';margin-left:auto;transition:transform .15s}
-    #content details.markdown-alert[open]>summary::after{transform:rotate(90deg)}
-    #content details.markdown-alert:not([open])>summary{margin-bottom:0}
-    #content a.wiki-link{border-bottom:1px dashed var(--link)}
-    #content a.wiki-link:hover{text-decoration:none;border-bottom-style:solid}
+    :is(#content,#slideBody) .markdown-alert-info{border-left-color:var(--color-note)}
+    :is(#content,#slideBody) .markdown-alert-info .markdown-alert-title{color:var(--color-note)}
+    :is(#content,#slideBody) .markdown-alert-success{border-left-color:var(--color-tip)}
+    :is(#content,#slideBody) .markdown-alert-success .markdown-alert-title{color:var(--color-tip)}
+    :is(#content,#slideBody) .markdown-alert-question{border-left-color:var(--color-warning)}
+    :is(#content,#slideBody) .markdown-alert-question .markdown-alert-title{color:var(--color-warning)}
+    :is(#content,#slideBody) .markdown-alert-bug,:is(#content,#slideBody) .markdown-alert-failure{border-left-color:var(--color-caution)}
+    :is(#content,#slideBody) .markdown-alert-bug .markdown-alert-title,:is(#content,#slideBody) .markdown-alert-failure .markdown-alert-title{color:var(--color-caution)}
+    :is(#content,#slideBody) .markdown-alert-example,:is(#content,#slideBody) .markdown-alert-abstract,:is(#content,#slideBody) .markdown-alert-todo{border-left-color:var(--color-important)}
+    :is(#content,#slideBody) .markdown-alert-example .markdown-alert-title,:is(#content,#slideBody) .markdown-alert-abstract .markdown-alert-title,:is(#content,#slideBody) .markdown-alert-todo .markdown-alert-title{color:var(--color-important)}
+    :is(#content,#slideBody) .markdown-alert-quote{border-left-color:var(--fg-muted)}
+    :is(#content,#slideBody) details.markdown-alert>summary{cursor:pointer;list-style:none}
+    :is(#content,#slideBody) details.markdown-alert>summary::-webkit-details-marker{display:none}
+    :is(#content,#slideBody) details.markdown-alert>summary::after{content:'▸';margin-left:auto;transition:transform .15s}
+    :is(#content,#slideBody) details.markdown-alert[open]>summary::after{transform:rotate(90deg)}
+    :is(#content,#slideBody) details.markdown-alert:not([open])>summary{margin-bottom:0}
+    :is(#content,#slideBody) a.wiki-link{border-bottom:1px dashed var(--link)}
+    :is(#content,#slideBody) a.wiki-link:hover{text-decoration:none;border-bottom-style:solid}
     /* 脚注ポップアップ */
     #fn-pop{position:absolute;z-index:30;max-width:420px;padding:.6rem .8rem;font-size:.85rem;
       background:var(--panel);border:1px solid var(--stroke);border-radius:8px;
@@ -989,35 +994,35 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
     /* 差分の色（Neovim から gitsigns / DiffAdd などの色が届けば上書きされる） */
     :root{--diff-add:#3fb950;--diff-mod:#d29922;--diff-del:#f85149}
     /* 変わったブロック: 左端のバー + 記号（色だけに頼らない）+ 薄い背景 */
-    #content .diff-add,#content .diff-mod{position:relative;border-radius:3px}
-    #content .diff-add{background:color-mix(in srgb,var(--diff-add) 9%,transparent)}
-    #content .diff-mod{background:color-mix(in srgb,var(--diff-mod) 9%,transparent)}
-    #content .diff-add::after,#content .diff-mod::after{content:'';position:absolute;left:-14px;top:0;bottom:0;width:4px;border-radius:2px}
-    #content .diff-add::after{background:var(--diff-add)}
-    #content .diff-mod::after{background:var(--diff-mod)}
-    #content .diff-add::before,#content .diff-mod::before{position:absolute;left:-30px;top:0;
+    :is(#content,#slideBody) .diff-add,:is(#content,#slideBody) .diff-mod{position:relative;border-radius:3px}
+    :is(#content,#slideBody) .diff-add{background:color-mix(in srgb,var(--diff-add) 9%,transparent)}
+    :is(#content,#slideBody) .diff-mod{background:color-mix(in srgb,var(--diff-mod) 9%,transparent)}
+    :is(#content,#slideBody) .diff-add::after,:is(#content,#slideBody) .diff-mod::after{content:'';position:absolute;left:-14px;top:0;bottom:0;width:4px;border-radius:2px}
+    :is(#content,#slideBody) .diff-add::after{background:var(--diff-add)}
+    :is(#content,#slideBody) .diff-mod::after{background:var(--diff-mod)}
+    :is(#content,#slideBody) .diff-add::before,:is(#content,#slideBody) .diff-mod::before{position:absolute;left:-30px;top:0;
       font:700 .85rem/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}
-    #content .diff-add::before{content:'+';color:var(--diff-add)}
-    #content .diff-mod::before{content:'~';color:var(--diff-mod)}
-    #content li.diff-add::after,#content li.diff-mod::after{left:-2.6em}
-    #content li.diff-add::before,#content li.diff-mod::before{left:-3.6em}
+    :is(#content,#slideBody) .diff-add::before{content:'+';color:var(--diff-add)}
+    :is(#content,#slideBody) .diff-mod::before{content:'~';color:var(--diff-mod)}
+    :is(#content,#slideBody) li.diff-add::after,:is(#content,#slideBody) li.diff-mod::after{left:-2.6em}
+    :is(#content,#slideBody) li.diff-add::before,:is(#content,#slideBody) li.diff-mod::before{left:-3.6em}
     /* 単語単位の差分 */
-    #content ins.diff-w{text-decoration:none;border-radius:2px;
+    :is(#content,#slideBody) ins.diff-w{text-decoration:none;border-radius:2px;
       background:color-mix(in srgb,var(--diff-add) 30%,transparent);box-shadow:inset 0 -2px 0 var(--diff-add)}
-    #content del.diff-w{border-radius:2px;color:var(--fg-muted);
+    :is(#content,#slideBody) del.diff-w{border-radius:2px;color:var(--fg-muted);
       background:color-mix(in srgb,var(--diff-del) 22%,transparent);
       text-decoration:line-through;text-decoration-color:var(--diff-del)}
     /* 削除された内容 / 変更前の内容（折りたたみ） */
-    #content .diff-ghost{margin:.4em 0 1em;border:1px dashed var(--diff-del);border-radius:6px;font-size:.92em;
+    :is(#content,#slideBody) .diff-ghost{margin:.4em 0 1em;border:1px dashed var(--diff-del);border-radius:6px;font-size:.92em;
       background:color-mix(in srgb,var(--diff-del) 6%,transparent)}
-    #content .diff-ghost-mod{border-color:var(--diff-mod);background:color-mix(in srgb,var(--diff-mod) 6%,transparent)}
-    #content .diff-ghost>summary{cursor:pointer;padding:.3em .8em;color:var(--diff-del);font-weight:600;
+    :is(#content,#slideBody) .diff-ghost-mod{border-color:var(--diff-mod);background:color-mix(in srgb,var(--diff-mod) 6%,transparent)}
+    :is(#content,#slideBody) .diff-ghost>summary{cursor:pointer;padding:.3em .8em;color:var(--diff-del);font-weight:600;
       white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    #content .diff-ghost-mod>summary{color:var(--diff-mod)}
-    #content .diff-ghost>summary .diff-ghost-preview{font-weight:400;color:var(--fg-muted);margin-left:.5em}
-    #content .diff-ghost-body{padding:.2em .9em .6em;opacity:.85}
-    #content .diff-ghost-del .diff-ghost-body{text-decoration:line-through;text-decoration-color:var(--diff-del)}
-    #content .diff-flash{animation:diffFlash 1.2s ease}
+    :is(#content,#slideBody) .diff-ghost-mod>summary{color:var(--diff-mod)}
+    :is(#content,#slideBody) .diff-ghost>summary .diff-ghost-preview{font-weight:400;color:var(--fg-muted);margin-left:.5em}
+    :is(#content,#slideBody) .diff-ghost-body{padding:.2em .9em .6em;opacity:.85}
+    :is(#content,#slideBody) .diff-ghost-del .diff-ghost-body{text-decoration:line-through;text-decoration-color:var(--diff-del)}
+    :is(#content,#slideBody) .diff-flash{animation:diffFlash 1.2s ease}
     @keyframes diffFlash{0%,40%{outline:2px solid var(--accent);outline-offset:4px}100%{outline:2px solid transparent;outline-offset:4px}}
     /* ヘッダーの差分ナビ（件数・凡例・前後へ移動） */
     #diffNav{display:flex;align-items:center;gap:.35rem;font-size:.75rem;color:var(--fg-muted);white-space:nowrap}
@@ -1053,19 +1058,19 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       html,body{background:#fff!important;height:auto}
       #content{max-width:none!important;width:auto!important;margin:0!important;padding:0!important;
         box-shadow:none!important;background:none!important;animation:none}
-      #content pre,#content table,#content .mermaid-block,#content img,#content blockquote{break-inside:avoid}
-      #content h1,#content h2,#content h3{break-after:avoid}
-      #content .diff-add,#content .diff-mod{background:none}
-      #content .diff-add::before,#content .diff-add::after,#content .diff-mod::before,#content .diff-mod::after{display:none}
-      #content ins.diff-w{background:none;box-shadow:none}
-      #content del.diff-w,#content .diff-ghost,#diffNav,#diffMarkers{display:none!important}
+      :is(#content,#slideBody) pre,:is(#content,#slideBody) table,:is(#content,#slideBody) .mermaid-block,:is(#content,#slideBody) img,:is(#content,#slideBody) blockquote{break-inside:avoid}
+      :is(#content,#slideBody) h1,:is(#content,#slideBody) h2,:is(#content,#slideBody) h3{break-after:avoid}
+      :is(#content,#slideBody) .diff-add,:is(#content,#slideBody) .diff-mod{background:none}
+      :is(#content,#slideBody) .diff-add::before,:is(#content,#slideBody) .diff-add::after,:is(#content,#slideBody) .diff-mod::before,:is(#content,#slideBody) .diff-mod::after{display:none}
+      :is(#content,#slideBody) ins.diff-w{background:none;box-shadow:none}
+      :is(#content,#slideBody) del.diff-w,:is(#content,#slideBody) .diff-ghost,#diffNav,#diffMarkers{display:none!important}
     }
     /* 見出しアンカーリンク */
-    #content .anchor-link{opacity:0;margin-left:.4em;font-size:.8em;
+    :is(#content,#slideBody) .anchor-link{opacity:0;margin-left:.4em;font-size:.8em;
       color:var(--fg-muted);text-decoration:none;transition:opacity .15s}
-    #content h1:hover .anchor-link,#content h2:hover .anchor-link,
-    #content h3:hover .anchor-link,#content h4:hover .anchor-link,
-    #content h5:hover .anchor-link,#content h6:hover .anchor-link{opacity:1}
+    :is(#content,#slideBody) h1:hover .anchor-link,:is(#content,#slideBody) h2:hover .anchor-link,
+    :is(#content,#slideBody) h3:hover .anchor-link,:is(#content,#slideBody) h4:hover .anchor-link,
+    :is(#content,#slideBody) h5:hover .anchor-link,:is(#content,#slideBody) h6:hover .anchor-link{opacity:1}
     /* KaTeX */
     .katex-display{overflow-x:auto;overflow-y:hidden;padding:.5em 0}
   </style>
@@ -2064,8 +2069,9 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       if (!ops) return false;
       const changed = ops.filter(o => o.type !== 'eq').reduce((sum, o) => sum + o.text.trim().length, 0);
       const total = oldText.trim().length + newText.trim().length;
-      // ほとんど書き換わっている場合は、変更前の内容をまとめて見せた方が読みやすい
-      if (!changed || changed / Math.max(1, total) > 0.7) return changed ? false : true;
+      // 比較できる違いが無い（数式の中だけが変わった等）か、ほとんど書き換わっている場合は、
+      // 変更前の内容をまとめて見せた方が分かりやすい
+      if (!changed || changed / Math.max(1, total) > 0.7) return false;
 
       let k = 0, off = 0;
       newNodes.forEach((node, idx) => {
@@ -2118,7 +2124,14 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       const body = oldFragment(html);
       body.className = 'diff-ghost-body';
       renderMath(body);
-      const preview = body.textContent.replace(/\s+/g, ' ').trim().slice(0, 80);
+      // 表などで単語がつながらないよう、テキストを空白区切りで集める
+      const pieces = [];
+      // KaTeX の MathML（\sigma などの元の式）は除き、表示されている文字だけを使う
+      const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, {
+        acceptNode: n => n.parentElement?.closest('.katex-mathml') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+      });
+      while (walker.nextNode()) { const t = walker.currentNode.data.trim(); if (t) pieces.push(t); }
+      const preview = pieces.join(' ').replace(/\s+/g, ' ').slice(0, 80);
       const summary = document.createElement('summary');
       summary.textContent = kind === 'del' ? '− Removed' : '~ Before';
       const pv = document.createElement('span');
