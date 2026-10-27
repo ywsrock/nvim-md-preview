@@ -404,131 +404,44 @@ function M._download(url, dest)
   return vim.v.shell_error == 0 and vim.fn.getfsize(dest) > 0
 end
 
---- pandoc をインストール
+--- pandoc をインストール（nvim-md-preview Releases から取得・解凍不要）
 function M._install_pandoc(install_dir, sysname, machine, is_win, ext)
-  -- pandoc はバージョン番号入りファイル名なので GitHub API でバージョンを取得
-  local version_cmd
-  if vim.fn.executable("curl") == 1 then
-    version_cmd = 'curl -sL "https://api.github.com/repos/jgm/pandoc/releases/latest"'
-  elseif vim.fn.has("win32") == 1 then
-    version_cmd = 'powershell -NoProfile -Command "(Invoke-WebRequest -Uri \'https://api.github.com/repos/jgm/pandoc/releases/latest\' -UseBasicParsing).Content"'
-  else
-    return false
-  end
-
-  local json_raw = vim.fn.system(version_cmd)
-  local version = json_raw:match('"tag_name"%s*:%s*"([^"]+)"')
-  if not version then
-    vim.notify("[md-preview] pandoc のバージョン取得に失敗しました", vim.log.levels.WARN)
-    return false
-  end
-
-  -- ファイル名決定（例: pandoc-3.13-windows-x86_64.zip）
   local fname
   if sysname == "Linux" then
-    fname = string.format("pandoc-%s-linux-amd64.tar.gz", version)
+    fname = "pandoc-linux"
   elseif sysname == "Darwin" then
     fname = (machine == "arm64" or machine == "aarch64")
-      and string.format("pandoc-%s-arm64-macOS.zip", version)
-       or string.format("pandoc-%s-x86_64-macOS.zip", version)
+      and "pandoc-macos-arm64" or "pandoc-macos-x86_64"
   else
-    fname = string.format("pandoc-%s-windows-x86_64.zip", version)
+    fname = "pandoc-windows.exe"
   end
 
-  local url     = string.format("https://github.com/jgm/pandoc/releases/download/%s/%s", version, fname)
-  local archive = install_dir .. "/" .. fname
-  local pandoc  = install_dir .. "/pandoc" .. ext
+  local url    = string.format("https://github.com/ywsrock/nvim-md-preview/releases/latest/download/%s", fname)
+  local pandoc = install_dir .. "/pandoc" .. ext
 
-  vim.notify("[md-preview] pandoc " .. version .. " をダウンロード中...", vim.log.levels.INFO)
-  if not M._download(url, archive) then return false end
-
-  -- 解凍
-  if fname:match("%.tar%.gz$") then
-    -- Linux: tar.gz から bin/pandoc を取り出す
-    vim.fn.system(string.format('tar -xzf "%s" -C "%s" --wildcards "*/bin/pandoc" --strip-components=2', archive, install_dir))
-    -- 解凍後パスを確認して移動
-    local found = install_dir .. "/bin/pandoc"
-    if vim.fn.filereadable(found) == 1 then
-      vim.fn.system(string.format('mv "%s" "%s"', found, pandoc))
-      vim.fn.system('rmdir "' .. install_dir .. '/bin" 2>/dev/null; true')
-    end
-  elseif is_win then
-    -- Windows: PowerShell で解凍
-    vim.fn.system(string.format(
-      'powershell -NoProfile -Command "Expand-Archive -Path \'%s\' -DestinationPath \'%s\' -Force"',
-      archive, install_dir .. "/pandoc_tmp"
-    ))
-    -- pandoc.exe を探して移動
-    local found = vim.fn.glob(install_dir .. "/pandoc_tmp/**/pandoc.exe", false, true)
-    if #found > 0 then
-      vim.fn.system(string.format('move "%s" "%s"', found[1], pandoc))
-    end
-    vim.fn.system('rmdir /s /q "' .. install_dir .. '\\pandoc_tmp" 2>nul')
-  else
-    -- macOS: unzip
-    vim.fn.system(string.format('unzip -jo "%s" "*/bin/pandoc" -d "%s"', archive, install_dir))
-  end
-  vim.fn.delete(archive)
-
-  if vim.fn.executable(pandoc) == 1 then
-    if not is_win then vim.fn.system('chmod +x "' .. pandoc .. '"') end
-    return true
-  end
-  return false
+  if not M._download(url, pandoc) then return false end
+  if not is_win then vim.fn.system('chmod +x "' .. pandoc .. '"') end
+  return vim.fn.executable(pandoc) == 1
 end
 
---- Typst をインストール
+--- Typst をインストール（nvim-md-preview Releases から取得・解凍不要）
 function M._install_typst(install_dir, sysname, machine, is_win, ext)
   local fname
   if sysname == "Linux" then
-    fname = "typst-x86_64-unknown-linux-musl.tar.xz"
+    fname = "typst-linux"
   elseif sysname == "Darwin" then
     fname = (machine == "arm64" or machine == "aarch64")
-      and "typst-aarch64-apple-darwin.tar.xz" or "typst-x86_64-apple-darwin.tar.xz"
+      and "typst-macos-arm64" or "typst-macos-x86_64"
   else
-    fname = "typst-x86_64-pc-windows-msvc.zip"
+    fname = "typst-windows.exe"
   end
 
-  local url     = "https://github.com/typst/typst/releases/latest/download/" .. fname
-  local archive = install_dir .. "/" .. fname
-  local typst   = install_dir .. "/typst" .. ext
+  local url   = string.format("https://github.com/ywsrock/nvim-md-preview/releases/latest/download/%s", fname)
+  local typst = install_dir .. "/typst" .. ext
 
-  vim.notify("[md-preview] Typst をダウンロード中...", vim.log.levels.INFO)
-  if not M._download(url, archive) then return false end
-
-  -- 解凍
-  -- アーカイブ構造: typst-<target>/typst[.exe]
-  if fname:match("%.tar%.xz$") then
-    -- Linux / macOS: tar で --strip-components=1 して typst だけ取り出す
-    vim.fn.system(string.format(
-      'tar -xJf "%s" -C "%s" --strip-components=1 --wildcards "*/typst"',
-      archive, install_dir
-    ))
-  elseif is_win then
-    -- Windows: PowerShell Expand-Archive で解凍し typst.exe を移動
-    local tmp_dir = install_dir .. "\\typst_tmp"
-    vim.fn.system(string.format(
-      'powershell -NoProfile -Command "Expand-Archive -Path \'%s\' -DestinationPath \'%s\' -Force"',
-      archive, tmp_dir
-    ))
-    -- typst.exe を探して移動
-    local found = vim.fn.glob(tmp_dir .. "\\**\\typst.exe", false, true)
-    if #found > 0 then
-      vim.fn.system(string.format('move /Y "%s" "%s"', found[1], typst))
-    end
-    vim.fn.system('rmdir /s /q "' .. tmp_dir .. '" 2>nul')
-  else
-    -- macOS zip フォールバック（通常は tar.xz を使う）
-    vim.fn.system(string.format('unzip -jo "%s" "*/typst" -d "%s"', archive, install_dir))
-  end
-  vim.fn.delete(archive)
-
-  if vim.fn.executable(typst) == 1 then
-    if not is_win then vim.fn.system('chmod +x "' .. typst .. '"') end
-    return true
-  end
-  vim.notify("[md-preview] Typst の解凍に失敗しました", vim.log.levels.WARN)
-  return false
+  if not M._download(url, typst) then return false end
+  if not is_win then vim.fn.system('chmod +x "' .. typst .. '"') end
+  return vim.fn.executable(typst) == 1
 end
 
 --- cargo を使ってソースからビルドする（リリースバイナリがない場合のフォールバック）
