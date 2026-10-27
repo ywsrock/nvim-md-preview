@@ -45,11 +45,13 @@ use axum::{
     Router,
 };
 use serde::Deserialize;
-use std::{path::PathBuf, sync::Arc};
-use tokio::sync::{broadcast, RwLock};
+use std::{path::{Path, PathBuf}, sync::Arc};
+use tokio::sync::{broadcast, mpsc, RwLock};
 use tower_http::cors::CorsLayer;
 
 pub type HtmlSender = broadcast::Sender<String>;
+/// Neovim へ送る通知 (method, params)
+pub type NvimNotify = (String, Vec<rmpv::Value>);
 
 #[derive(Clone)]
 pub struct AppState {
@@ -62,10 +64,14 @@ pub struct AppState {
     pub pandoc_path: Arc<RwLock<Option<PathBuf>>>,
     /// Typst バイナリのパス
     pub typst_path: Arc<RwLock<Option<PathBuf>>>,
+    /// 現在のバッファ内容（未保存分も含む。エクスポートに使用）
+    pub current_content: Arc<RwLock<Option<String>>>,
+    /// Neovim への RPC 通知チャネル（stdout に書く）
+    pub nvim_tx: mpsc::UnboundedSender<NvimNotify>,
 }
 
 impl AppState {
-    pub fn new(tx: HtmlSender) -> Self {
+    pub fn new(tx: HtmlSender, nvim_tx: mpsc::UnboundedSender<NvimNotify>) -> Self {
         Self {
             tx,
             latest_html: Arc::new(RwLock::new(None)),
@@ -73,7 +79,14 @@ impl AppState {
             current_file: Arc::new(RwLock::new(None)),
             pandoc_path: Arc::new(RwLock::new(None)),
             typst_path: Arc::new(RwLock::new(None)),
+            current_content: Arc::new(RwLock::new(None)),
+            nvim_tx,
         }
+    }
+
+    /// Neovim の API を通知として呼ぶ（応答は受け取らない）
+    pub fn notify_nvim(&self, method: &str, params: Vec<rmpv::Value>) {
+        let _ = self.nvim_tx.send((method.to_string(), params));
     }
 
     pub async fn update_html(&self, payload: String) {
@@ -171,21 +184,45 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
     {
         let latest = state.latest_html.read().await;
         if let Some(payload) = latest.as_ref() {
-            if socket.send(Message::Text(payload.clone().into())).await.is_err() {
+            if socket.send(Message::Text(payload.clone())).await.is_err() {
                 return;
             }
         }
     }
     let mut rx = state.tx.subscribe();
     loop {
-        match rx.recv().await {
-            Ok(payload) => {
-                if socket.send(Message::Text(payload.into())).await.is_err() { break; }
-            }
-            Err(broadcast::error::RecvError::Lagged(_)) => continue,
-            Err(broadcast::error::RecvError::Closed) => break,
+        tokio::select! {
+            // Neovim → ブラウザ（内容更新・スクロール）
+            msg = rx.recv() => match msg {
+                Ok(payload) => {
+                    if socket.send(Message::Text(payload)).await.is_err() { break; }
+                }
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(broadcast::error::RecvError::Closed) => break,
+            },
+            // ブラウザ → Neovim（クリックで該当行へジャンプ）
+            incoming = socket.recv() => match incoming {
+                Some(Ok(Message::Text(text))) => handle_browser_message(&state, &text),
+                Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break,
+                _ => {}
+            },
         }
     }
+}
+
+/// ブラウザから届いた JSON メッセージを処理する
+/// {"type":"goto","line":N} → Neovim のカーソルを N 行目へ
+fn handle_browser_message(state: &AppState, text: &str) {
+    let Ok(data) = serde_json::from_str::<serde_json::Value>(text) else { return; };
+    if data.get("type").and_then(|v| v.as_str()) != Some("goto") { return; }
+    let Some(line) = data.get("line").and_then(|v| v.as_u64()) else { return; };
+    state.notify_nvim(
+        "nvim_exec_lua",
+        vec![
+            rmpv::Value::from("require('md_preview')._goto_line(...)"),
+            rmpv::Value::Array(vec![rmpv::Value::from(line)]),
+        ],
+    );
 }
 
 /// /assets?p=relative/path — 相対パス画像を提供する
@@ -221,178 +258,156 @@ async fn export_handler(
     Query(params): Query<ExportParams>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
-    let current_file = state.current_file.read().await;
-    let Some(md_path) = current_file.as_ref() else {
-        return error_response("ファイルが開かれていません。:MdPreview でプレビューを開始してください。");
-    };
-
-    let format = params.format.to_lowercase();
-    let stem = md_path.file_stem().and_then(|s| s.to_str()).unwrap_or("export");
-
-    match format.as_str() {
-        // Markdown: ファイルをそのまま返す
-        "markdown" | "md" => {
-            match tokio::fs::read(md_path).await {
-                Ok(data) => {
-                    let filename = format!("{}.md", stem);
-                    download_response(data, &filename, "text/markdown; charset=utf-8")
-                }
-                Err(_) => error_response("ファイルの読み込みに失敗しました。"),
-            }
-        }
-
-        // DOCX: pandoc で変換
-        "docx" => {
-            let pandoc = state.pandoc_path.read().await;
-            let pandoc_bin = pandoc.as_ref()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|| "pandoc".to_string());
-            convert_with_pandoc(&pandoc_bin, md_path, stem, "docx",
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document").await
-        }
-
-        // HTML: pandoc でスタンドアロン HTML
-        "html" => {
-            let pandoc = state.pandoc_path.read().await;
-            let pandoc_bin = pandoc.as_ref()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|| "pandoc".to_string());
-            convert_with_pandoc(&pandoc_bin, md_path, stem, "html", "text/html; charset=utf-8").await
-        }
-
-        // EPUB: pandoc で変換
-        "epub" => {
-            let pandoc = state.pandoc_path.read().await;
-            let pandoc_bin = pandoc.as_ref()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|| "pandoc".to_string());
-            convert_with_pandoc(&pandoc_bin, md_path, stem, "epub", "application/epub+zip").await
-        }
-
-        // PDF: Typst で変換
-        "pdf" => {
-            let typst = state.typst_path.read().await;
-            let typst_bin = typst.as_ref()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|| "typst".to_string());
-            convert_with_typst(&typst_bin, md_path, stem).await
-        }
-
-        _ => error_response(&format!("未対応の形式: {}", format)),
+    match export_bytes(&state, &params.format.to_lowercase()).await {
+        Ok((data, filename)) => download_response(data, &filename, mime_for_format(&filename)),
+        Err(e) => error_response(&e),
     }
 }
 
-/// pandoc でファイルを変換してレスポンスとして返す
+/// 形式名 → 拡張子（"md" / "markdown" はどちらも .md）
+fn extension_for(format: &str) -> Option<&'static str> {
+    match format {
+        "markdown" | "md" => Some("md"),
+        "docx" => Some("docx"),
+        "html" => Some("html"),
+        "epub" => Some("epub"),
+        "pdf"  => Some("pdf"),
+        _ => None,
+    }
+}
+
+fn mime_for_format(filename: &str) -> &'static str {
+    match filename.rsplit('.').next().unwrap_or("") {
+        "md"   => "text/markdown; charset=utf-8",
+        "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "html" => "text/html; charset=utf-8",
+        "epub" => "application/epub+zip",
+        "pdf"  => "application/pdf",
+        _      => "application/octet-stream",
+    }
+}
+
+/// 現在のバッファ内容を指定形式に変換して (バイト列, ファイル名) を返す
+/// HTTP (/export) と RPC (:MdPreviewExport) の両方から使う
+pub async fn export_bytes(state: &AppState, format: &str) -> Result<(Vec<u8>, String), String> {
+    let Some(ext) = extension_for(format) else {
+        return Err(format!("未対応の形式: {}", format));
+    };
+
+    // プレビュー中の内容（未保存分も含む）を使う
+    let content = state.current_content.read().await.clone()
+        .ok_or_else(|| "ファイルが開かれていません。:MdPreview でプレビューを開始してください。".to_string())?;
+    let current_file = state.current_file.read().await.clone();
+    let base_dir = state.base_dir.read().await.clone();
+    let stem = current_file.as_ref()
+        .and_then(|p| p.file_stem())
+        .and_then(|s| s.to_str())
+        .unwrap_or("export")
+        .to_string();
+    let filename = format!("{}.{}", stem, ext);
+
+    if ext == "md" {
+        return Ok((content.into_bytes(), filename));
+    }
+
+    // 変換ツールにはファイルで渡す。同時実行で衝突しないよう一意な名前にする
+    let work = std::env::temp_dir().join(format!("nvim-md-preview-{}-{}", std::process::id(), unique_id()));
+    tokio::fs::create_dir_all(&work).await.map_err(|e| format!("一時ディレクトリの作成に失敗: {}", e))?;
+    let md_tmp = work.join("input.md");
+    tokio::fs::write(&md_tmp, &content).await.map_err(|e| format!("一時ファイルの作成に失敗: {}", e))?;
+
+    let result = if ext == "pdf" {
+        let typst = state.typst_path.read().await;
+        let typst_bin = typst.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|| "typst".to_string());
+        convert_with_typst(&typst_bin, &work).await
+    } else {
+        let pandoc = state.pandoc_path.read().await;
+        let pandoc_bin = pandoc.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|| "pandoc".to_string());
+        convert_with_pandoc(&pandoc_bin, &work, ext, base_dir.as_ref()).await
+    };
+
+    let _ = tokio::fs::remove_dir_all(&work).await;
+    result.map(|data| (data, filename))
+}
+
+fn unique_id() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0)
+}
+
+/// pandoc で work/input.md を変換して出力バイト列を返す
 async fn convert_with_pandoc(
     pandoc_bin: &str,
-    md_path: &PathBuf,
-    stem: &str,
+    work: &Path,
     format: &str,
-    mime: &str,
-) -> Response {
-    let out_path = std::env::temp_dir().join(format!("nvim_md_preview_export.{}", format));
+    base_dir: Option<&PathBuf>,
+) -> Result<Vec<u8>, String> {
+    let in_path  = work.join("input.md");
+    let out_path = work.join(format!("output.{}", format));
 
     let mut args = vec![
-        md_path.to_string_lossy().to_string(),
+        in_path.to_string_lossy().to_string(),
         "-o".to_string(),
         out_path.to_string_lossy().to_string(),
         "--from=markdown+gfm_auto_identifiers".to_string(),
     ];
-
+    // 相対パスの画像はプレビュー中ファイルのディレクトリから探す
+    if let Some(dir) = base_dir {
+        args.push(format!("--resource-path={}", dir.to_string_lossy()));
+    }
     // HTML はスタンドアロンで出力
     if format == "html" {
         args.push("--standalone".to_string());
     }
 
-    let result = tokio::process::Command::new(pandoc_bin)
+    let output = tokio::process::Command::new(pandoc_bin)
         .args(&args)
         .output()
-        .await;
+        .await
+        .map_err(|e| format!("pandoc が見つかりません。:MdPreviewInstall でインストールしてください。\n\nエラー: {}", e))?;
 
-    match result {
-        Ok(output) if output.status.success() => {
-            match tokio::fs::read(&out_path).await {
-                Ok(data) => {
-                    let _ = tokio::fs::remove_file(&out_path).await;
-                    download_response(data, &format!("{}.{}", stem, format), mime)
-                }
-                Err(_) => error_response("変換結果の読み込みに失敗しました。"),
-            }
-        }
-        Ok(output) => {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            error_response(&format!(
-                "pandoc 変換に失敗しました。pandoc がインストールされているか確認してください。\n\
-                 インストール: :MdPreviewInstall\n\nエラー: {}",
-                truncate_chars(&stderr, 500)
-            ))
-        }
-        Err(e) => error_response(&format!(
-            "pandoc が見つかりません。:MdPreviewInstall でインストールしてください。\n\nエラー: {}",
-            e
-        )),
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "pandoc 変換に失敗しました。pandoc がインストールされているか確認してください。\n\
+             インストール: :MdPreviewInstall\n\nエラー: {}",
+            truncate_chars(&stderr, 500)
+        ));
     }
+    tokio::fs::read(&out_path).await.map_err(|_| "変換結果の読み込みに失敗しました。".to_string())
 }
 
-/// Typst で Markdown → PDF に変換
-async fn convert_with_typst(typst_bin: &str, md_path: &PathBuf, stem: &str) -> Response {
-    // Typst は .typ 形式を受け取るので、Markdown を wrap する
-    let md_content = match tokio::fs::read_to_string(md_path).await {
-        Ok(c) => c,
-        Err(_) => return error_response("ファイルの読み込みに失敗しました。"),
-    };
-
+/// Typst で work/input.md を PDF に変換して出力バイト列を返す
+async fn convert_with_typst(typst_bin: &str, work: &Path) -> Result<Vec<u8>, String> {
     // Typst の cmarker パッケージで Markdown をそのまま処理
-    // Markdown は raw ブロックに埋め込むと ``` を含む文書で壊れるので、別ファイルにして read() で読む
+    // Markdown は raw ブロックに埋め込むと ``` を含む文書で壊れるので、ファイルを read() で読む
     let typ_content = r#"#import "@preview/cmarker:0.1.4": render
 #set page(margin: 2cm)
 #set text(font: ("Noto Serif CJK JP", "Noto Serif", "Georgia"), size: 11pt)
 #set heading(numbering: none)
 
-#render(read("nvim_md_preview_export.md"), h1-level: 1)
+#render(read("input.md"), h1-level: 1)
 "#;
+    let typ_path = work.join("input.typ");
+    let pdf_path = work.join("output.pdf");
+    tokio::fs::write(&typ_path, typ_content).await.map_err(|e| format!("一時ファイルの作成に失敗: {}", e))?;
 
-    let md_tmp_path = std::env::temp_dir().join("nvim_md_preview_export.md");
-    let typ_path = std::env::temp_dir().join("nvim_md_preview_export.typ");
-    let pdf_path = std::env::temp_dir().join("nvim_md_preview_export.pdf");
-
-    if let Err(e) = tokio::fs::write(&md_tmp_path, &md_content).await {
-        return error_response(&format!("一時ファイルの作成に失敗: {}", e));
-    }
-    if let Err(e) = tokio::fs::write(&typ_path, typ_content).await {
-        return error_response(&format!("一時ファイルの作成に失敗: {}", e));
-    }
-
-    let result = tokio::process::Command::new(typst_bin)
+    let output = tokio::process::Command::new(typst_bin)
         .args(["compile", &typ_path.to_string_lossy(), &pdf_path.to_string_lossy()])
         .output()
-        .await;
+        .await
+        .map_err(|e| format!("Typst が見つかりません。:MdPreviewInstall でインストールしてください。\n\nエラー: {}", e))?;
 
-    let _ = tokio::fs::remove_file(&typ_path).await;
-    let _ = tokio::fs::remove_file(&md_tmp_path).await;
-
-    match result {
-        Ok(output) if output.status.success() => {
-            match tokio::fs::read(&pdf_path).await {
-                Ok(data) => {
-                    let _ = tokio::fs::remove_file(&pdf_path).await;
-                    download_response(data, &format!("{}.pdf", stem), "application/pdf")
-                }
-                Err(_) => error_response("PDF の読み込みに失敗しました。"),
-            }
-        }
-        Ok(output) => {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            error_response(&format!(
-                "Typst 変換に失敗しました。:MdPreviewInstall で Typst をインストールしてください。\n\nエラー: {}",
-                truncate_chars(&stderr, 500)
-            ))
-        }
-        Err(e) => error_response(&format!(
-            "Typst が見つかりません。:MdPreviewInstall でインストールしてください。\n\nエラー: {}",
-            e
-        )),
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "Typst 変換に失敗しました。:MdPreviewInstall で Typst をインストールしてください。\n\nエラー: {}",
+            truncate_chars(&stderr, 500)
+        ));
     }
+    tokio::fs::read(&pdf_path).await.map_err(|_| "PDF の読み込みに失敗しました。".to_string())
 }
 
 /// 文字境界を壊さずに先頭 max 文字を返す（バイト単位スライスは多バイト文字で panic する）
@@ -495,6 +510,8 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
     header h1{margin:0;font-size:.9rem;font-weight:600;letter-spacing:.2px;flex:1;
       overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .spacer{flex:1}
+    .src-line{display:block;height:0;margin:0;padding:0;overflow:hidden}
+    #content.click-sync{cursor:default}
     .status-dot{width:7px;height:7px;border-radius:50%;background:var(--fg-muted);
       opacity:.4;transition:all .3s;flex-shrink:0}
     .status-dot.connected{background:#3fb950;opacity:1;box-shadow:0 0 6px rgba(63,185,80,.5)}
@@ -794,8 +811,8 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
     }
 
     // ── Code: syntax highlight + lang badge + copy button ────────
-    function attachCodeFeatures() {
-      contentEl.querySelectorAll('.code-wrap').forEach(wrap => {
+    function attachCodeFeatures(root) {
+      root.querySelectorAll('.code-wrap').forEach(wrap => {
         const pre  = wrap.querySelector('pre');
         const code = pre?.querySelector('code');
         if (!pre || !code) return;
@@ -824,15 +841,42 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
     }
 
     // ── Content update ────────────────────────────────────────────
-    async function renderContent(html) {
-      const scrollY = window.scrollY;
+    // 文字列の簡易ハッシュ（ブロックの同一性判定に使う）
+    function hashStr(str) {
+      let h = 5381;
+      for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0;
+      return (h >>> 0).toString(36) + ':' + str.length;
+    }
 
-      // pulldown-cmark の ```mermaid → mermaid-block に変換
+    // 新しいブロック列を contentEl に差分適用する。
+    // data-key が同じ既存ノードはそのまま使い回す（Mermaid の描画結果やスクロール位置を保つ）
+    function reconcile(parent, newChildren) {
+      const pool = new Map();
+      for (const n of Array.from(parent.children)) {
+        const k = n.dataset.key;
+        if (!pool.has(k)) pool.set(k, []);
+        pool.get(k).push(n);
+      }
+      const result = newChildren.map(n => {
+        const list = pool.get(n.dataset.key);
+        return list && list.length ? list.shift() : n;
+      });
+      result.forEach((node, i) => {
+        const cur = parent.children[i];
+        if (cur !== node) parent.insertBefore(node, cur || null);
+      });
+      while (parent.children.length > result.length) parent.lastElementChild.remove();
+    }
+
+    async function renderContent(html) {
+      // 新しい内容は切り離した要素の上で全部加工してから、最後に差分だけ DOM に入れる
       const tmp = document.createElement('div');
       tmp.innerHTML = html;
+
+      // pulldown-cmark の ```mermaid → mermaid-block に変換
       tmp.querySelectorAll('code.language-mermaid').forEach(code => {
         const source = encodeURIComponent(code.textContent || '');
-        const id = 'mmd-' + (++mermaidCounter);
+        const id = 'mmd-' + hashStr(source);
         const block = document.createElement('div');
         block.className = 'mermaid-block'; block.id = id;
         block.dataset.mermaidSource = source;
@@ -860,18 +904,27 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
         wrap.appendChild(pre);
       });
 
-      contentEl.innerHTML = tmp.innerHTML;
+      // 加工はすべて tmp 上で行う（DOM に入れる前なのでちらつかない）
+      rewriteRelativeImages(tmp);
+      attachCodeFeatures(tmp);
+      renderGithubAlerts(tmp);
+      addHeadingAnchors(tmp);
+      replaceEmoji(tmp);
+      renderMath(tmp);
+
+      // ブロックごとのキー。Mermaid はソースで、それ以外は加工後の HTML で判定する
+      for (const el of Array.from(tmp.children)) {
+        el.dataset.key = el.classList.contains('mermaid-block')
+          ? 'mmd:' + el.dataset.mermaidSource
+          : hashStr(el.outerHTML);
+      }
+
+      reconcile(contentEl, Array.from(tmp.children));
       skeleton.style.display = 'none';
       contentEl.style.display = '';
 
-      rewriteRelativeImages(contentEl);
-      attachCodeFeatures();
-      renderGithubAlerts();
-      addHeadingAnchors();
-      replaceEmoji();
-      renderMath();
       await renderAllMermaid();
-      window.scrollTo(0, scrollY);
+      if (pendingScroll) { scrollToLine(pendingScroll.line, pendingScroll.total); pendingScroll = null; }
     }
 
     // ── Overlay ───────────────────────────────────────────────────
@@ -1000,8 +1053,8 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
     };
     const ALERT_LABEL = { note:'Note', tip:'Tip', warning:'Warning', caution:'Caution', important:'Important' };
 
-    function renderGithubAlerts() {
-      contentEl.querySelectorAll('blockquote').forEach(bq => {
+    function renderGithubAlerts(root) {
+      root.querySelectorAll('blockquote').forEach(bq => {
         const firstP = bq.querySelector('p');
         if (!firstP) return;
         // pulldown-cmark: "[!NOTE]\n..." or "[!NOTE]<br>..."
@@ -1021,8 +1074,8 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
     }
 
     // ── 見出しアンカーリンク ──────────────────────────────────────
-    function addHeadingAnchors() {
-      contentEl.querySelectorAll('h1,h2,h3,h4,h5,h6').forEach(h => {
+    function addHeadingAnchors(root) {
+      root.querySelectorAll('h1,h2,h3,h4,h5,h6').forEach(h => {
         // 既にアンカーがあればスキップ
         if (h.querySelector('.anchor-link')) return;
         const id = h.textContent.trim()
@@ -1069,10 +1122,10 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       'white_square_button':'🔳','black_square_button':'🔲',
     };
 
-    function replaceEmoji() {
+    function replaceEmoji(root) {
       // テキストノードのみ走査（code/pre 内は除外）
       const walker = document.createTreeWalker(
-        contentEl, NodeFilter.SHOW_TEXT,
+        root, NodeFilter.SHOW_TEXT,
         { acceptNode: n => {
           const p = n.parentElement;
           if (!p) return NodeFilter.FILTER_REJECT;
@@ -1090,9 +1143,9 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
     }
 
     // ── KaTeX 数式レンダリング ────────────────────────────────────
-    function renderMath() {
+    function renderMath(root) {
       if (!window.renderMathInElement) return;
-      renderMathInElement(contentEl, {
+      renderMathInElement(root, {
         delimiters: [
           { left: '$$', right: '$$', display: true },
           { left: '$',  right: '$',  display: false },
@@ -1121,23 +1174,77 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
     window.addEventListener('wheel',     () => { scrollSyncPaused = true; clearTimeout(scrollSyncTimer); scrollSyncTimer = setTimeout(() => { scrollSyncPaused = false; }, 3000); }, { passive: true });
     window.addEventListener('touchmove', () => { scrollSyncPaused = true; clearTimeout(scrollSyncTimer); scrollSyncTimer = setTimeout(() => { scrollSyncPaused = false; }, 3000); }, { passive: true });
 
-    function scrollToLine(line, total) {
-      if (scrollSyncPaused) return;
-      const ratio = Math.max(0, Math.min(1, (line - 1) / Math.max(1, total - 1)));
-      const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
-      window.scrollTo({ top: maxScroll * ratio, behavior: 'instant' });
+    // 内容更新の直後に届いたスクロールは、描画が終わってから反映する
+    let pendingScroll = null;
+    let lastScroll = { line: 1, total: 1 };
+
+    // 行マーカー（<span class="src-line" data-line>）の一覧を行番号順に返す
+    function lineMarkers() {
+      return Array.from(contentEl.querySelectorAll('.src-line'))
+        .map(el => ({ line: +el.dataset.line, top: el.getBoundingClientRect().top + window.scrollY }))
+        .filter(m => Number.isFinite(m.line))
+        .sort((a, b) => a.line - b.line);
     }
 
+    // カーソル行 line に対応するページ上の Y 座標。
+    // 行番号がぴったり一致するマーカーが無ければ、前後のマーカーの間を行数で按分する
+    function yForLine(line, total) {
+      const markers = lineMarkers();
+      if (!markers.length) {
+        const ratio = Math.max(0, Math.min(1, (line - 1) / Math.max(1, total - 1)));
+        return (document.documentElement.scrollHeight - window.innerHeight) * ratio;
+      }
+      let before = null, after = null;
+      for (const m of markers) {
+        if (m.line <= line) before = m; else { after = m; break; }
+      }
+      if (!before) return 0;
+      const endTop = contentEl.getBoundingClientRect().bottom + window.scrollY;
+      const nextLine = after ? after.line : total + 1;
+      const nextTop  = after ? after.top  : endTop;
+      const span = Math.max(1, nextLine - before.line);
+      return before.top + (nextTop - before.top) * Math.min(1, (line - before.line) / span);
+    }
+
+    function scrollToLine(line, total) {
+      lastScroll = { line, total };
+      if (scrollSyncPaused) return;
+      // カーソル行が画面の上から 30% の位置に来るようにする
+      const y = yForLine(line, total) - window.innerHeight * 0.3;
+      window.scrollTo({ top: Math.max(0, y), behavior: 'instant' });
+    }
+
+    // ── クリックでエディタの該当行へジャンプ ──────────────────────
+    contentEl.classList.add('click-sync');
+    contentEl.addEventListener('click', e => {
+      // リンク・ボタン・図の操作、テキスト選択中はジャンプしない
+      if (e.target.closest('a,button,input,details,summary,.mermaid-block,.copy-btn')) return;
+      if (String(window.getSelection?.() || '').length) return;
+      const y = e.clientY + window.scrollY;
+      let best = null;
+      for (const el of contentEl.querySelectorAll('.src-line')) {
+        const top = el.getBoundingClientRect().top + window.scrollY;
+        if (top <= y + 1 && (!best || top >= best.top)) best = { top, line: +el.dataset.line };
+      }
+      if (best && wsConn && wsConn.readyState === WebSocket.OPEN) {
+        wsConn.send(JSON.stringify({ type: 'goto', line: best.line }));
+      }
+    });
+
     // ── WebSocket ─────────────────────────────────────────────────
+    let wsConn = null;
+    let rendering = false;
     function connect() {
       const ws = new WebSocket(`ws://${location.host}/ws`);
+      wsConn = ws;
       ws.onopen  = () => { statusDot.className = 'status-dot connected'; statusDot.title = 'Connected'; };
       ws.onmessage = async e => {
         const data = JSON.parse(e.data);
 
         // スクロール同期メッセージ
         if (data.type === 'scroll') {
-          scrollToLine(data.line, data.total);
+          if (rendering) pendingScroll = { line: data.line, total: data.total };
+          else scrollToLine(data.line, data.total);
           return;
         }
 
@@ -1145,7 +1252,8 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
         document.title = data.title;
         titleEl.textContent = data.title;
         updateFrontMatter(data.front_matter || null);
-        await renderContent(data.html);
+        rendering = true;
+        try { await renderContent(data.html); } finally { rendering = false; }
       };
       ws.onclose = () => { statusDot.className = 'status-dot error'; statusDot.title = 'Disconnected'; setTimeout(connect, 3000); };
       ws.onerror = () => ws.close();

@@ -1,3 +1,6 @@
 /target
 /lib
 /src/embedded_lib
+
+# Claude Code の作業ディレクトリ
+.claude/

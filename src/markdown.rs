@@ -1,4 +1,4 @@
-use pulldown_cmark::{html, Options, Parser};
+use pulldown_cmark::{html, Event, Options, Parser, Tag, TagEnd};
 
 /// YAML front matter（`---` で囲まれたブロック）を抽出する。
 /// 戻り値: (front_matter, 本文)
@@ -35,8 +35,21 @@ pub fn extract_front_matter(content: &str) -> (Option<String>, String) {
     (None, content)
 }
 
+/// front matter の行数（本文の行番号をバッファの行番号に戻すためのオフセット）
+/// `---\n<fm>\n---\n` なので fm の行数 + 2
+pub fn front_matter_line_count(front_matter: Option<&str>) -> usize {
+    match front_matter {
+        Some(fm) => fm.lines().count() + 2,
+        None => 0,
+    }
+}
+
 /// Markdown テキストを HTML 文字列に変換する
-pub fn to_html(markdown: &str) -> String {
+///
+/// スクロール同期・クリックジャンプ用に、ブロック要素の直前（リスト項目と引用は直後）に
+/// `<span class="src-line" data-line="N"></span>` を埋め込む。N は 1 始まりの行番号で、
+/// `line_offset` を足して返す（front matter 分のずれを補正するため）。
+pub fn to_html(markdown: &str, line_offset: usize) -> String {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_FOOTNOTES);
@@ -44,9 +57,123 @@ pub fn to_html(markdown: &str) -> String {
     options.insert(Options::ENABLE_TASKLISTS);
     options.insert(Options::ENABLE_SMART_PUNCTUATION);
 
-    let parser = Parser::new_ext(markdown, options);
+    // バイトオフセット → 行番号 の変換表（各行の開始オフセット）
+    let line_starts: Vec<usize> = std::iter::once(0)
+        .chain(markdown.match_indices('\n').map(|(i, _)| i + 1))
+        .collect();
+    let line_of = |offset: usize| -> usize {
+        // offset 以下の最大の開始位置を二分探索
+        let idx = match line_starts.binary_search(&offset) {
+            Ok(i) => i,
+            Err(i) => i.saturating_sub(1),
+        };
+        idx + 1 + line_offset
+    };
+
+    let marker = |offset: usize| -> Event<'static> {
+        Event::Html(format!(r#"<span class="src-line" data-line="{}"></span>"#, line_of(offset)).into())
+    };
+
+    let mut in_table = 0usize;
+    let mut events: Vec<Event> = Vec::new();
+    for (event, range) in Parser::new_ext(markdown, options).into_offset_iter() {
+        match &event {
+            Event::Start(Tag::Table(_)) => { in_table += 1; events.push(event); }
+            Event::End(TagEnd::Table) => { in_table -= 1; events.push(event); }
+            // テーブル内（<tr>/<td> の間）に span を置くと HTML が壊れるので入れない
+            _ if in_table > 0 => events.push(event),
+            // <li>/<blockquote> は中に置いてよい（直前に置くと <ul> 直下に span が入る）
+            Event::Start(Tag::Item) | Event::Start(Tag::BlockQuote(_)) => {
+                events.push(event);
+                events.push(marker(range.start));
+            }
+            Event::Start(Tag::Paragraph)
+            | Event::Start(Tag::Heading { .. })
+            | Event::Start(Tag::CodeBlock(_))
+            | Event::Start(Tag::HtmlBlock)
+            | Event::Start(Tag::List(_)) => {
+                events.push(marker(range.start));
+                events.push(event);
+            }
+            Event::Rule => {
+                events.push(marker(range.start));
+                events.push(event);
+            }
+            _ => events.push(event),
+        }
+    }
+
     let mut html_output = String::new();
-    html::push_html(&mut html_output, parser);
+    html::push_html(&mut html_output, events.into_iter());
     html_output
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn front_matter_is_split_from_body() {
+        let (fm, body) = extract_front_matter("---\ntitle: x\n---\n# Hi\n");
+        assert_eq!(fm.as_deref(), Some("title: x"));
+        assert_eq!(body, "# Hi\n");
+        assert_eq!(front_matter_line_count(fm.as_deref()), 3);
+    }
+
+    #[test]
+    fn no_front_matter() {
+        let (fm, body) = extract_front_matter("# Hi\n");
+        assert!(fm.is_none());
+        assert_eq!(body, "# Hi\n");
+        assert_eq!(front_matter_line_count(None), 0);
+    }
+
+    #[test]
+    fn empty_front_matter() {
+        let (fm, body) = extract_front_matter("---\n---\nbody");
+        assert_eq!(fm.as_deref(), Some(""));
+        assert_eq!(body, "body");
+        assert_eq!(front_matter_line_count(fm.as_deref()), 2);
+    }
+
+    #[test]
+    fn crlf_is_normalized() {
+        let (fm, body) = extract_front_matter("---\r\na: 1\r\n---\r\nx\r\n");
+        assert_eq!(fm.as_deref(), Some("a: 1"));
+        assert_eq!(body, "x\n");
+    }
+
+    #[test]
+    fn line_markers_point_to_source_lines() {
+        let md = "# Title\n\npara one\n\n- a\n- b\n\n```rs\nlet x = 1;\n```\n";
+        let html = to_html(md, 0);
+        let lines: Vec<&str> = html
+            .match_indices("data-line=\"")
+            .map(|(i, _)| {
+                let rest = &html[i + 11..];
+                &rest[..rest.find('"').unwrap()]
+            })
+            .collect();
+        // 見出し(1), 段落(3), リスト(5), 項目a(5), 項目b(6), コード(8)
+        assert_eq!(lines, vec!["1", "3", "5", "5", "6", "8"]);
+    }
+
+    #[test]
+    fn line_offset_shifts_markers() {
+        let html = to_html("para\n", 3);
+        assert!(html.contains(r#"data-line="4""#));
+    }
+
+    #[test]
+    fn no_markers_inside_tables() {
+        let md = "| a | b |\n|---|---|\n| 1 | 2 |\n";
+        let html = to_html(md, 0);
+        assert!(!html.contains("src-line"), "{}", html);
+    }
+
+    #[test]
+    fn list_item_marker_is_inside_li() {
+        let html = to_html("- item\n", 0);
+        assert!(html.contains(r#"<li><span class="src-line" data-line="1"></span>item</li>"#), "{}", html);
+    }
+}

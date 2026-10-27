@@ -14,6 +14,12 @@ M.config = {
     .. (vim.fn.has("win32") == 1 and ".exe" or ""),
   port = 9876,
   auto_open = true,
+  -- カーソル移動に合わせてプレビューをスクロールする
+  scroll_sync = true,
+  -- 別の Markdown バッファに移動したらプレビュー対象を切り替える
+  follow_buffer = true,
+  -- 入力が止まってからプレビューを更新するまでの待ち時間（ms）
+  debounce_ms = 80,
 
   -- エクスポート設定
   export = {
@@ -34,7 +40,11 @@ local state = {
   chan_id      = nil,  -- RPC チャネルID
   buf_id       = nil,  -- 監視中のバッファ ID
   actual_port  = nil,  -- サーバーが実際に使用しているポート（ポート競合時に変わる）
+  update_timer = nil,  -- デバウンス用タイマー
+  attached     = {},   -- nvim_buf_attach 済みのバッファ（二重登録防止）
 }
+
+local uv = vim.uv or vim.loop
 
 --- プレビューが実行中かどうか
 function M._is_running()
@@ -72,9 +82,21 @@ local function send_update(buf)
   pcall(vim.rpcnotify, state.chan_id, "md_preview_update", content, title, base_dir, file_path)
 end
 
+--- 入力が止まってから send_update する（連続入力で全文送信を繰り返さない）
+local function schedule_update(buf)
+  if state.update_timer then
+    state.update_timer:stop()
+  else
+    state.update_timer = uv.new_timer()
+  end
+  state.update_timer:start(M.config.debounce_ms or 0, 0, vim.schedule_wrap(function()
+    if state.buf_id == buf and vim.api.nvim_buf_is_valid(buf) then send_update(buf) end
+  end))
+end
+
 --- Rust バイナリにカーソル行を送る（スクロール同期）
 local function send_scroll(buf)
-  if state.chan_id == nil then return end
+  if state.chan_id == nil or not M.config.scroll_sync then return end
   local line  = vim.api.nvim_win_get_cursor(0)[1]
   local total = vim.api.nvim_buf_line_count(buf)
   pcall(vim.rpcnotify, state.chan_id, "md_preview_scroll",
@@ -117,17 +139,21 @@ local function attach_buffer(buf)
 
   state.buf_id = buf
 
-  -- テキスト変更イベント
-  vim.api.nvim_buf_attach(buf, false, {
-    on_lines = function(_, changed_buf, _, _, _, _)
-      vim.schedule(function()
-        send_update(changed_buf)
-      end)
-    end,
-    on_detach = function()
-      state.buf_id = nil
-    end,
-  })
+  -- テキスト変更イベント（同じバッファに二重登録しない。
+  -- 監視対象でなくなったバッファの変更は state.buf_id の比較で無視する）
+  if not state.attached[buf] then
+    state.attached[buf] = true
+    vim.api.nvim_buf_attach(buf, false, {
+      on_lines = function(_, changed_buf, _, _, _, _)
+        if state.buf_id ~= changed_buf then return end
+        schedule_update(changed_buf)
+      end,
+      on_detach = function(_, detached_buf)
+        state.attached[detached_buf] = nil
+        if state.buf_id == detached_buf then state.buf_id = nil end
+      end,
+    })
+  end
 
   -- カーソル移動でスクロール同期（バッファごとに1つだけ登録）
   vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
@@ -232,6 +258,22 @@ function M.start()
 
   -- バッファを監視開始
   attach_buffer(buf)
+
+  -- 別の Markdown バッファに移動したらプレビュー対象を切り替える
+  vim.api.nvim_create_autocmd("BufEnter", {
+    group = vim.api.nvim_create_augroup("md_preview_follow", { clear = true }),
+    callback = function(ev)
+      if not M.config.follow_buffer or state.job_id == nil then return end
+      if ev.buf == state.buf_id then return end
+      -- filetype 未検出の環境でも拡張子で判定する
+      local is_md = vim.bo[ev.buf].filetype == "markdown"
+        or ev.file:match("%.md$") ~= nil or ev.file:match("%.markdown$") ~= nil
+      if not is_md then return end
+      attach_buffer(ev.buf)
+      send_export_config()
+      send_scroll(ev.buf)
+    end,
+  })
   vim.defer_fn(function()
     send_update(buf)
   end, 500)
@@ -264,7 +306,67 @@ function M.stop()
     pcall(vim.api.nvim_del_augroup_by_name, "md_preview_scroll_" .. state.buf_id)
     state.buf_id = nil
   end
+  pcall(vim.api.nvim_del_augroup_by_name, "md_preview_follow")
+  if state.update_timer then
+    state.update_timer:stop()
+    state.update_timer:close()
+    state.update_timer = nil
+  end
   vim.notify("[md-preview] プレビュー停止", vim.log.levels.INFO)
+end
+
+--- ブラウザでクリックされた行へカーソルを移動する（バイナリから nvim_exec_lua 経由で呼ばれる）
+function M._goto_line(line)
+  local buf = state.buf_id
+  if buf == nil or not vim.api.nvim_buf_is_valid(buf) then return end
+  local win = vim.fn.bufwinid(buf)
+  if win == -1 then return end
+  local total = vim.api.nvim_buf_line_count(buf)
+  line = math.max(1, math.min(tonumber(line) or 1, total))
+  vim.api.nvim_win_set_cursor(win, { line, 0 })
+  -- カーソル行を画面中央に
+  vim.api.nvim_win_call(win, function() vim.cmd("normal! zz") end)
+end
+
+--- エクスポート対応形式
+M.export_formats = { "pdf", "docx", "html", "epub", "markdown" }
+
+--- プレビュー中の内容を指定形式で書き出す（:MdPreviewExport コマンドから呼ぶ）
+--- path を省略するとプレビュー中ファイルと同じ場所に同じ名前で保存する
+function M.export(format, path)
+  format = (format or ""):lower()
+  if not vim.tbl_contains(M.export_formats, format) then
+    vim.notify("[md-preview] 未対応の形式です: " .. format
+      .. "（" .. table.concat(M.export_formats, " / ") .. "）", vim.log.levels.ERROR)
+    return
+  end
+  if state.chan_id == nil or state.buf_id == nil then
+    vim.notify("[md-preview] プレビューが起動していません。先に :MdPreview を実行してください", vim.log.levels.ERROR)
+    return
+  end
+  if path == nil or path == "" then
+    local name = vim.api.nvim_buf_get_name(state.buf_id)
+    if name == "" then
+      vim.notify("[md-preview] 保存先を指定してください: :MdPreviewExport " .. format .. " <path>", vim.log.levels.ERROR)
+      return
+    end
+    local ext = format == "markdown" and "md" or format
+    path = vim.fn.fnamemodify(name, ":r") .. "." .. ext
+  end
+  path = vim.fn.fnamemodify(vim.fn.expand(path), ":p")
+  -- 最新のバッファ内容を送ってから変換する（未保存の変更も含める）
+  send_update(state.buf_id)
+  vim.notify("[md-preview] " .. format:upper() .. " に変換中...", vim.log.levels.INFO)
+  pcall(vim.rpcnotify, state.chan_id, "md_preview_export", format, path)
+end
+
+--- エクスポート完了通知（バイナリから nvim_exec_lua 経由で呼ばれる）
+function M._on_export_done(ok, path, err)
+  if ok then
+    vim.notify("[md-preview] ✅ 保存しました: " .. path, vim.log.levels.INFO)
+  else
+    vim.notify("[md-preview] ❌ エクスポートに失敗しました\n" .. (err or ""), vim.log.levels.ERROR)
+  end
 end
 
 --- WSL 環境かどうかを検出する

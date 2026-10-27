@@ -1,11 +1,11 @@
 mod markdown;
 mod server;
 
-use server::AppState;
+use server::{AppState, NvimNotify};
 use std::{path::PathBuf, sync::Arc};
 use tokio::{
-    io::AsyncReadExt,
-    sync::broadcast,
+    io::{AsyncReadExt, AsyncWriteExt},
+    sync::{broadcast, mpsc},
 };
 
 const DEFAULT_PORT: u16 = 9876;
@@ -17,101 +17,87 @@ const DEFAULT_PORT: u16 = 9876;
 ///   - type=2: notification
 ///   - method: String
 ///   - params: Array
+///
+/// stdin は任意の位置で分割されて届き、1 回の read に複数メッセージが乗ることもあるので、
+/// 読み残しをバッファに保持し、揃ったメッセージから順にデコードする。
 async fn run_rpc_loop(state: Arc<AppState>) {
+    // 最大 16MB まで（Neovim からの通常のメッセージはずっと小さい）
+    const MAX_SIZE: usize = 16 * 1024 * 1024;
+
     let mut stdin = tokio::io::stdin();
+    let mut buf: Vec<u8> = Vec::with_capacity(64 * 1024);
+    let mut chunk = vec![0u8; 64 * 1024];
 
     loop {
-        // msgpack の最初のバイトを読む
-        // msgpack fixarray: 0x93 = 3要素配列, 0x94 = 4要素配列
-        let mut header = [0u8; 1];
-        if stdin.read_exact(&mut header).await.is_err() {
-            break; // stdin が閉じた（Neovim 終了）
+        // バッファにある完全なメッセージをすべて処理する
+        loop {
+            if buf.is_empty() { break; }
+            let mut cursor = std::io::Cursor::new(&buf[..]);
+            match rmpv::decode::read_value(&mut cursor) {
+                Ok(msg) => {
+                    let consumed = cursor.position() as usize;
+                    buf.drain(..consumed);
+                    dispatch(&state, msg).await;
+                }
+                // まだデータが足りない → 続きを読む
+                Err(_) => break,
+            }
         }
 
-        // rmpv で Value を読む（先頭バイトを含めて読み直す）
-        // stdin をバッファリングして rmpv::decode::read_value を使う
-        // 先頭バイトを戻せないので、残りを読んで再構築する
-        let msg = match read_msgpack_value(&mut stdin, header[0]).await {
-            Ok(v) => v,
-            Err(_) => break,
-        };
-
-        // [type, method, params] の形式を確認
-        let arr = match msg.as_array() {
-            Some(a) if a.len() >= 3 => a,
-            _ => continue,
-        };
-
-        let msg_type = arr[0].as_u64().unwrap_or(0);
-        if msg_type != 2 {
-            // type=0: request, type=1: response, type=2: notification
-            // request/response は現在無視（ping 対応は不要）
-            continue;
+        if buf.len() >= MAX_SIZE {
+            break; // 壊れたデータでバッファが膨らみ続けるのを防ぐ
         }
-
-        let method = match arr[1].as_str() {
-            Some(s) => s.to_string(),
-            None => continue,
-        };
-
-        let params = match arr[2].as_array() {
-            Some(a) => a.clone(),
-            None => continue,
-        };
-
-        match method.as_str() {
-            "md_preview_update" => {
-                handle_update(&state, &params).await;
-            }
-            "md_preview_scroll" => {
-                handle_scroll(&state, &params);
-            }
-            "md_preview_config" => {
-                handle_config(&state, &params).await;
-            }
-            _ => {}
+        match stdin.read(&mut chunk).await {
+            Ok(0) | Err(_) => break, // stdin が閉じた（Neovim 終了）
+            Ok(n) => buf.extend_from_slice(&chunk[..n]),
         }
     }
 }
 
-/// msgpack の Value を stdin から読む
-/// header: 既に読んだ先頭 1 バイト
-async fn read_msgpack_value(
-    stdin: &mut tokio::io::Stdin,
-    first_byte: u8,
-) -> Result<rmpv::Value, Box<dyn std::error::Error + Send + Sync>> {
-    // 先頭バイトからメッセージ全体のサイズを推定して読み込む
-    // msgpack は可変長なので、Cursor を使って段階的に読む
-    let mut buf = vec![first_byte];
+/// 1 メッセージを method ごとの処理に振り分ける
+async fn dispatch(state: &Arc<AppState>, msg: rmpv::Value) {
+    // [type, method, params] の形式を確認
+    let arr = match msg.as_array() {
+        Some(a) if a.len() >= 3 => a,
+        _ => return,
+    };
 
-    // 最大 16MB まで読む（Neovim からの通常のメッセージはずっと小さい）
-    const MAX_SIZE: usize = 16 * 1024 * 1024;
+    // type=0: request, type=1: response, type=2: notification
+    // request/response は現在無視（ping 対応は不要）
+    if arr[0].as_u64().unwrap_or(0) != 2 {
+        return;
+    }
+    let Some(method) = arr[1].as_str() else { return; };
+    let Some(params) = arr[2].as_array() else { return; };
 
-    loop {
-        let mut cursor = std::io::Cursor::new(&buf);
-        match rmpv::decode::read_value(&mut cursor) {
-            Ok(val) => {
-                // 正常に読めた場合、残りのバイト数を stdin から読み捨てる必要はない
-                // cursor.position() が消費したバイト数
-                let consumed = cursor.position() as usize;
-                // buf に余分なバイトがある場合は stdin を先読みしすぎているので注意
-                // ただし通常は buf.len() == consumed になるはず
-                let _ = consumed;
-                return Ok(val);
-            }
-            Err(_) => {
-                // まだデータが足りない → もっと読む
-                if buf.len() >= MAX_SIZE {
-                    return Err("message too large".into());
-                }
-                let mut tmp = [0u8; 4096];
-                let n = stdin.read(&mut tmp).await?;
-                if n == 0 {
-                    return Err("stdin closed".into());
-                }
-                buf.extend_from_slice(&tmp[..n]);
-            }
+    match method {
+        "md_preview_update" => handle_update(state, params).await,
+        "md_preview_scroll" => handle_scroll(state, params),
+        "md_preview_config" => handle_config(state, params).await,
+        "md_preview_export" => {
+            // 変換は時間がかかるので RPC ループを止めないよう別タスクで実行
+            let state = Arc::clone(state);
+            let params = params.clone();
+            tokio::spawn(async move { handle_export(&state, &params).await; });
         }
+        _ => {}
+    }
+}
+
+/// Neovim へ msgpack-rpc 通知を stdout に書く
+/// notify フォーマット: [2, method, params]。API メソッド（nvim_exec_lua など）も通知で呼べる
+async fn run_nvim_writer(mut rx: mpsc::UnboundedReceiver<NvimNotify>) {
+    let mut stdout = tokio::io::stdout();
+    while let Some((method, params)) = rx.recv().await {
+        let msg = rmpv::Value::Array(vec![
+            rmpv::Value::from(2),
+            rmpv::Value::from(method),
+            rmpv::Value::Array(params),
+        ]);
+        let mut buf = Vec::new();
+        if rmpv::encode::write_value(&mut buf, &msg).is_err() { continue; }
+        if stdout.write_all(&buf).await.is_err() { break; }
+        let _ = stdout.flush().await;
     }
 }
 
@@ -131,8 +117,11 @@ async fn handle_update(state: &AppState, params: &[rmpv::Value]) {
         *state.current_file.write().await = Some(PathBuf::from(file_path_str));
     }
 
+    *state.current_content.write().await = Some(content.to_string());
+
     let (front_matter, body) = markdown::extract_front_matter(content);
-    let html = markdown::to_html(&body);
+    let line_offset = markdown::front_matter_line_count(front_matter.as_deref());
+    let html = markdown::to_html(&body, line_offset);
 
     let payload = serde_json::json!({
         "type": "content",
@@ -158,6 +147,36 @@ async fn handle_config(state: &AppState, params: &[rmpv::Value]) {
     }
 }
 
+/// `md_preview_export` 処理 — バッファ内容を変換してファイルに書き出す
+/// params: [format, out_path]
+/// 完了したら Neovim 側の require("md_preview")._on_export_done(ok, path, err) を呼ぶ
+async fn handle_export(state: &AppState, params: &[rmpv::Value]) {
+    let format   = params.first().and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
+    let out_path = params.get(1).and_then(|v| v.as_str()).unwrap_or("").to_string();
+
+    let result = match server::export_bytes(state, &format).await {
+        Ok((data, _filename)) => tokio::fs::write(&out_path, data).await
+            .map_err(|e| format!("書き込みに失敗しました: {}", e)),
+        Err(e) => Err(e),
+    };
+
+    let (ok, err) = match result {
+        Ok(()) => (true, String::new()),
+        Err(e) => (false, e),
+    };
+    state.notify_nvim(
+        "nvim_exec_lua",
+        vec![
+            rmpv::Value::from("require('md_preview')._on_export_done(...)"),
+            rmpv::Value::Array(vec![
+                rmpv::Value::from(ok),
+                rmpv::Value::from(out_path),
+                rmpv::Value::from(err),
+            ]),
+        ],
+    );
+}
+
 /// `md_preview_scroll` 処理
 fn handle_scroll(state: &AppState, params: &[rmpv::Value]) {
     // Neovim は整数を符号付き(i64)または符号なし(u64)で送る場合がある
@@ -179,7 +198,10 @@ async fn main() {
     let port: u16 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(DEFAULT_PORT);
 
     let (tx, _rx) = broadcast::channel::<String>(16);
-    let state = Arc::new(AppState::new(tx));
+    let (nvim_tx, nvim_rx) = mpsc::unbounded_channel::<NvimNotify>();
+    let state = Arc::new(AppState::new(tx, nvim_tx));
+
+    tokio::spawn(run_nvim_writer(nvim_rx));
 
     {
         let state_server = Arc::clone(&state);
