@@ -23,7 +23,7 @@ Neovim 用の Markdown ライブプレビューです。Rust 製のバイナリ 
 | 同期 | ブロック単位のスクロール同期、クリックで該当行へ移動、切り替えた Markdown バッファに追従 |
 | ナビゲーション | 目次パネル（`t`）、検索（`/` か Ctrl+F）、見出しアンカー |
 | モード | プレゼンモード（`p`、`---` でスライドを区切る）、A4 の改ページ目安つき印刷プレビュー |
-| Git | `:MdPreviewDiff` で `HEAD` から変わったブロックに印を付ける |
+| Git | `:MdPreviewDiff` で `HEAD`・ステージ済み・任意のブランチとの差分を表示。単語単位の差分、削除された内容・変更前の内容、変更の件数、前後への移動、スクロールバーの印 |
 | エクスポート | PDF / DOCX / HTML / EPUB / Markdown。用紙サイズ、余白、フォント、目次、見出し番号、Typst テンプレートを指定可能 |
 | 見た目 | ダーク / ライト / 自動のテーマ、カスタム CSS |
 | 対応環境 | Linux（x86_64, arm64）、macOS（Intel, Apple Silicon）、Windows、WSL |
@@ -76,7 +76,7 @@ Markdown ファイルを開いて `:MarkdownPreview` を実行します。
 | `:MarkdownPreviewStop` / `:MdPreviewStop` | 停止 |
 | `:MarkdownPreviewToggle` | 開始 / 停止を切り替え |
 | `:MdPreviewExport {形式} [path]` | 現在のバッファを出力：`pdf` `docx` `html` `epub` `markdown`。`path` を省略するとファイルと同じ場所に保存 |
-| `:MdPreviewDiff` | Git の `HEAD` からの変更を表示 / 非表示 |
+| `:MdPreviewDiff [基準]` | Git の差分を表示 / 非表示。`基準`（`HEAD`、`staged`、ブランチ・タグ・コミット）を指定するとそれと比較。`off` で非表示 |
 | `:MdPreviewInstall` | バイナリ・pandoc・Typst をダウンロード / 更新 |
 
 ブラウザでの操作：
@@ -106,7 +106,9 @@ require("md_preview").setup({
   custom_css = "",        -- 組み込みスタイルの後に読み込む CSS ファイル
   wiki_links = true,      -- [[Page]] をリンクにする
   browser_keys = true,    -- プレビュー画面のキーボードショートカット（t, /, Ctrl+F, p）。Vim 系拡張とぶつかる場合は false
-  git_diff = false,       -- HEAD からの変更に印を付ける（:MdPreviewDiff で切り替え）
+  git_diff = false,       -- Git の差分を表示する（:MdPreviewDiff で切り替え）
+  git_diff_base = "HEAD", -- 比較の基準: "HEAD" | "staged" | ブランチ・タグ・コミット
+  git_diff_colors = true, -- 差分の色をエディタ（gitsigns、Added、DiffAdd など）に合わせる
 
   export = {
     pdf_engine  = "typst",  -- "typst"。それ以外にすると Typst をダウンロードしない
@@ -125,6 +127,18 @@ require("md_preview").setup({
 ```
 
 Vimscript では `g:md_preview_port` と `g:md_preview_auto_open` も使えます。
+
+### Git の差分表示
+
+![Git の差分表示](docs/diff.png)
+
+`:MdPreviewDiff` で、バッファの内容（未保存の編集を含む）と `HEAD` を比較します。`:MdPreviewDiff main` でブランチと、`:MdPreviewDiff staged` でステージ済みの内容と比較できるので、PR のレビューやコミット前の見直しに使えます。
+
+- 変更された段落では、追加した語に下線、削除した語に取り消し線が付きます。日本語のように空白の無い文は 1 文字ずつ比較します。
+- 削除された段落は、元の場所に折りたたんだ「削除された内容」として表示します。コード・表・図・数式のブロックや、ほとんど書き換えた段落は、折りたたんだ「変更前の内容」を表示します。
+- 変わったブロックには左端のバーと記号（`+` 追加、`~` 変更、`−` 削除）が付くので、色が分かりにくくても区別できます。
+- ヘッダーに変更の件数が出て、↑ / ↓ で前後の変更に移動できます。スクロールバーの横の印で、文書のどこが変わったかが分かります。
+- 色はエディタの差分の色に合わせます。プレビューのテーマで読みにくい色の場合は、緑・黄・赤を使います。
 
 ### PDF のテンプレート
 

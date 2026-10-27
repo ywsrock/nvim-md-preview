@@ -973,9 +973,51 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
     mark.search-hit{background:rgba(250,204,21,.35);color:inherit;border-radius:2px}
     mark.search-hit.current{background:rgba(250,204,21,.85);color:#000}
     /* Git 差分（HEAD からの変更）: 左端のバー */
-    #content .diff-add{box-shadow:-14px 0 0 -11px #3fb950}
-    #content .diff-mod{box-shadow:-14px 0 0 -11px #d29922}
-    #content .diff-del{box-shadow:-14px 2px 0 -11px #f85149}
+    /* 差分の色（Neovim から gitsigns / DiffAdd などの色が届けば上書きされる） */
+    :root{--diff-add:#3fb950;--diff-mod:#d29922;--diff-del:#f85149}
+    /* 変わったブロック: 左端のバー + 記号（色だけに頼らない）+ 薄い背景 */
+    #content .diff-add,#content .diff-mod{position:relative;border-radius:3px}
+    #content .diff-add{background:color-mix(in srgb,var(--diff-add) 9%,transparent)}
+    #content .diff-mod{background:color-mix(in srgb,var(--diff-mod) 9%,transparent)}
+    #content .diff-add::after,#content .diff-mod::after{content:'';position:absolute;left:-14px;top:0;bottom:0;width:4px;border-radius:2px}
+    #content .diff-add::after{background:var(--diff-add)}
+    #content .diff-mod::after{background:var(--diff-mod)}
+    #content .diff-add::before,#content .diff-mod::before{position:absolute;left:-30px;top:0;
+      font:700 .85rem/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}
+    #content .diff-add::before{content:'+';color:var(--diff-add)}
+    #content .diff-mod::before{content:'~';color:var(--diff-mod)}
+    #content li.diff-add::after,#content li.diff-mod::after{left:-2.6em}
+    #content li.diff-add::before,#content li.diff-mod::before{left:-3.6em}
+    /* 単語単位の差分 */
+    #content ins.diff-w{text-decoration:none;border-radius:2px;
+      background:color-mix(in srgb,var(--diff-add) 30%,transparent);box-shadow:inset 0 -2px 0 var(--diff-add)}
+    #content del.diff-w{border-radius:2px;color:var(--fg-muted);
+      background:color-mix(in srgb,var(--diff-del) 22%,transparent);
+      text-decoration:line-through;text-decoration-color:var(--diff-del)}
+    /* 削除された内容 / 変更前の内容（折りたたみ） */
+    #content .diff-ghost{margin:.4em 0 1em;border:1px dashed var(--diff-del);border-radius:6px;font-size:.92em;
+      background:color-mix(in srgb,var(--diff-del) 6%,transparent)}
+    #content .diff-ghost-mod{border-color:var(--diff-mod);background:color-mix(in srgb,var(--diff-mod) 6%,transparent)}
+    #content .diff-ghost>summary{cursor:pointer;padding:.3em .8em;color:var(--diff-del);font-weight:600;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    #content .diff-ghost-mod>summary{color:var(--diff-mod)}
+    #content .diff-ghost>summary .diff-ghost-preview{font-weight:400;color:var(--fg-muted);margin-left:.5em}
+    #content .diff-ghost-body{padding:.2em .9em .6em;opacity:.85}
+    #content .diff-ghost-del .diff-ghost-body{text-decoration:line-through;text-decoration-color:var(--diff-del)}
+    #content .diff-flash{animation:diffFlash 1.2s ease}
+    @keyframes diffFlash{0%,40%{outline:2px solid var(--accent);outline-offset:4px}100%{outline:2px solid transparent;outline-offset:4px}}
+    /* ヘッダーの差分ナビ（件数・凡例・前後へ移動） */
+    #diffNav{display:flex;align-items:center;gap:.35rem;font-size:.75rem;color:var(--fg-muted);white-space:nowrap}
+    #diffNav[hidden]{display:none}
+    #diffNav .lg{display:inline-flex;align-items:center;justify-content:center;width:1.3em;height:1.3em;border-radius:4px;
+      font:700 .75rem/1 ui-monospace,monospace;color:var(--bg)}
+    #diffNav .lg-add{background:var(--diff-add)}#diffNav .lg-mod{background:var(--diff-mod)}#diffNav .lg-del{background:var(--diff-del)}
+    #diffNav .btn{padding:.15rem .4rem;font-size:.75rem}
+    @media(max-width:720px){#diffLegend{display:none}}
+    /* スクロールバー横の変更位置の印 */
+    #diffMarkers{position:fixed;right:2px;bottom:4px;width:8px;z-index:6;pointer-events:none}
+    #diffMarkers div{position:absolute;left:0;width:100%;min-height:3px;border-radius:2px;pointer-events:auto;cursor:pointer;opacity:.85}
+    #diffMarkers .m-add{background:var(--diff-add)}#diffMarkers .m-mod{background:var(--diff-mod)}#diffMarkers .m-del{background:var(--diff-del)}
     /* プレゼンモード */
     #slides{position:fixed;inset:0;z-index:40;background:var(--bg);display:flex;flex-direction:column}
     #slides[hidden]{display:none}
@@ -1000,7 +1042,10 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
         box-shadow:none!important;background:none!important;animation:none}
       #content pre,#content table,#content .mermaid-block,#content img,#content blockquote{break-inside:avoid}
       #content h1,#content h2,#content h3{break-after:avoid}
-      #content .diff-add,#content .diff-mod,#content .diff-del{box-shadow:none}
+      #content .diff-add,#content .diff-mod{background:none}
+      #content .diff-add::before,#content .diff-add::after,#content .diff-mod::before,#content .diff-mod::after{display:none}
+      #content ins.diff-w{background:none;box-shadow:none}
+      #content del.diff-w,#content .diff-ghost,#diffNav,#diffMarkers{display:none!important}
     }
     /* 見出しアンカーリンク */
     #content .anchor-link{opacity:0;margin-left:.4em;font-size:.8em;
@@ -1026,6 +1071,12 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h10M4 18h13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
     </button>
     <h1 id="title">md Preview</h1>
+    <div id="diffNav" hidden>
+      <span id="diffLegend" title="+ 追加 / ~ 変更 / − 削除"><i class="lg lg-add">+</i><i class="lg lg-mod">~</i><i class="lg lg-del">−</i></span>
+      <span id="diffSummary"></span>
+      <button id="diffPrev" class="btn" title="前の変更">↑</button>
+      <button id="diffNext" class="btn" title="次の変更">↓</button>
+    </div>
     <button id="searchBtn" class="btn" title="検索 (/ または Ctrl+F)">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="m20 20-3.5-3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
     </button>
@@ -1067,6 +1118,7 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
   </div>
 
   <nav id="toc" aria-label="目次"></nav>
+  <div id="diffMarkers" aria-hidden="true"></div>
   <div id="slides" hidden>
     <div id="slideStage"><div id="slideBody"></div></div>
     <div id="slideBar">
@@ -1305,12 +1357,13 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       skeleton.style.display = 'none';
       contentEl.style.display = '';
 
-      buildToc();
       applyDiff();
+      buildToc();
       if (!slidesEl.hidden) { buildSlides(); showSlide(slideIdx); }
       // 検索中なら新しい内容で検索し直す
       if (!searchBar.hidden && searchInput.value) runSearch();
       await renderAllMermaid();
+      positionDiffMarkers();
       if (pendingScroll) { scrollToLine(pendingScroll.line, pendingScroll.total); pendingScroll = null; }
     }
 
@@ -1666,7 +1719,8 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
           return;
         }
         if (data.type === 'diff') {
-          lastDiff = data.ranges || [];
+          diffState = data;
+          applyDiffColors();
           if (!rendering) applyDiff();
           return;
         }
@@ -1729,7 +1783,10 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       for (const h of hs) {
         const a = document.createElement('a');
         a.href = '#' + h.id;
-        a.textContent = h.textContent.trim();
+        // 差分表示の削除語（del）は目次に含めない
+        const clone = h.cloneNode(true);
+        clone.querySelectorAll('del.diff-w,.anchor-link').forEach(n => n.remove());
+        a.textContent = clone.textContent.trim();
         a.style.paddingLeft = (0.5 + (+h.tagName[1] - min) * 0.9) + 'rem';
         a.dataset.target = h.id;
         tocEl.appendChild(a);
@@ -1855,8 +1912,32 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
     }, true);
 
     // ── Git 差分の表示 ────────────────────────────────────────────
-    let lastDiff = [];
-    // 各行マーカーが受け持つブロック要素と行範囲を返す
+    // エディタの差分の色を使う。エディタとプレビューのテーマが違うと読みにくい色になることがあるので、
+    // 背景とのコントラストが足りなければ既定の色に戻す
+    function luminance(hex) {
+      const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255)
+        .map(c => c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    }
+    function contrast(a, b) {
+      const [x, y] = [luminance(a), luminance(b)].sort((p, q) => q - p);
+      return (x + 0.05) / (y + 0.05);
+    }
+    function applyDiffColors() {
+      const bg = currentTheme === 'dark' ? '#0d1117' : '#ffffff';
+      for (const k of ['add', 'mod', 'del']) {
+        const c = diffState.colors?.[k];
+        if (c && contrast(c, bg) >= 2.2) document.documentElement.style.setProperty('--diff-' + k, c);
+        else document.documentElement.style.removeProperty('--diff-' + k);
+      }
+    }
+    themeBtn.addEventListener('click', () => applyDiffColors());
+
+    // diffState: { enabled, available, base, colors, hunks: [{ s, e, kind, old_html, ctx: [s, e] }] }
+    let diffState = { enabled: false, hunks: [] };
+    let diffTargets = [], diffIdx = -1;
+
+    // 各行マーカーが受け持つブロック要素と行範囲を返す（入れ子の <li> なども含む）
     function markerBlocks() {
       const ms = Array.from(contentEl.querySelectorAll('.src-line'));
       return ms.map((m, i) => {
@@ -1867,36 +1948,308 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
         const parent = m.parentElement;
         const el = parent !== contentEl && m === parent.firstElementChild ? parent : m.nextElementSibling;
         return { el, start, end };
-      }).filter(b => b.el && b.el !== contentEl);
+      }).filter(b => b.el && b.el !== contentEl && !b.el.classList.contains('src-line'));
     }
-    function applyDiff() {
-      contentEl.querySelectorAll('.diff-add,.diff-mod,.diff-del').forEach(e => e.classList.remove('diff-add', 'diff-mod', 'diff-del'));
-      if (!lastDiff.length) return;
-      const blocks = markerBlocks();
-      for (const [s, e, kind] of lastDiff) {
-        for (const b of blocks) {
-          const hit = kind === 'del' ? (s >= b.start && s <= b.end) : (s <= b.end && e >= b.start);
-          if (!hit || b.el.classList.contains('diff-mod')) continue;
-          const cls = 'diff-' + kind;
-          const other = ['diff-add', 'diff-del'].find(c => c !== cls && b.el.classList.contains(c));
-          // 同じブロックに追加と削除が両方あれば「変更」として表示する
-          if (other) { b.el.classList.remove(other); b.el.classList.add('diff-mod'); }
-          else b.el.classList.add(cls);
-        }
+
+    // contentEl 直下のブロックと行範囲
+    function topBlocks() {
+      const tops = [];
+      let pending = null;
+      for (const el of contentEl.children) {
+        if (el.classList.contains('src-line')) { pending = +el.dataset.line; continue; }
+        if (el.classList.contains('diff-ghost')) continue;
+        let line = pending; pending = null;
+        if (line == null) { const m = el.querySelector('.src-line'); line = m ? +m.dataset.line : null; }
+        if (line != null) tops.push({ el, start: line });
       }
-      // 入れ子（<ul> と <li> など）は一番内側だけに印を残す
-      const marked = contentEl.querySelectorAll('.diff-add,.diff-mod,.diff-del');
-      marked.forEach(el => {
-        if (el.querySelector('.diff-add,.diff-mod,.diff-del')) el.classList.remove('diff-add', 'diff-mod', 'diff-del');
+      tops.forEach((t, i) => {
+        const next = tops.slice(i + 1).find(n => n.start > t.start);
+        t.end = next ? next.start - 1 : Infinity;
+      });
+      return tops;
+    }
+
+    // 前回の表示を消す（再利用された DOM ノードにも残っているので毎回消す）
+    function clearDiff() {
+      contentEl.querySelectorAll('.diff-add,.diff-mod').forEach(e => e.classList.remove('diff-add', 'diff-mod'));
+      contentEl.querySelectorAll('ins.diff-w').forEach(e => e.replaceWith(document.createTextNode(e.textContent)));
+      contentEl.querySelectorAll('del.diff-w,.diff-ghost').forEach(e => e.remove());
+      contentEl.querySelectorAll('.diff-flash').forEach(e => e.classList.remove('diff-flash'));
+      contentEl.normalize();
+      $('diffMarkers').innerHTML = '';
+      diffTargets = []; diffIdx = -1;
+    }
+
+    // 単語単位の差分に使うテキストノード（数式・図・アイコンなどは除く）
+    const DIFF_SKIP = '.src-line,.katex,.math-inline,.math-display,.anchor-link,.copy-btn,.code-lang,svg,script,style,del.diff-w';
+    function textNodesOf(els) {
+      const nodes = [];
+      for (const el of els) {
+        const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
+          acceptNode: n => n.parentElement?.closest(DIFF_SKIP) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+        });
+        while (w.nextNode()) nodes.push(w.currentNode);
+      }
+      return nodes;
+    }
+    // 英数字は単語ごと、日本語などは 1 文字ずつに分ける（日本語には空白が無いため）
+    function tokenize(text) { return text.match(/[A-Za-z0-9_À-ɏ]+|\s+|[^]/gu) || []; }
+    // 最長共通部分列で差分を取る。大きすぎる場合は null（変更前の内容を表示する方に切り替える）
+    function diffTokens(a, b) {
+      const n = a.length, m = b.length;
+      if (n * m > 3e6) return null;
+      const w = m + 1, dp = new Uint32Array((n + 1) * w);
+      for (let i = n - 1; i >= 0; i--)
+        for (let j = m - 1; j >= 0; j--)
+          dp[i * w + j] = a[i] === b[j] ? dp[(i + 1) * w + j + 1] + 1 : Math.max(dp[(i + 1) * w + j], dp[i * w + j + 1]);
+      const ops = [];
+      const push = (type, text) => { const l = ops[ops.length - 1]; if (l && l.type === type) l.text += text; else ops.push({ type, text }); };
+      let i = 0, j = 0;
+      while (i < n && j < m) {
+        if (a[i] === b[j]) { push('eq', a[i]); i++; j++; }
+        else if (dp[(i + 1) * w + j] >= dp[i * w + j + 1]) push('del', a[i++]);
+        else push('ins', b[j++]);
+      }
+      while (i < n) push('del', a[i++]);
+      while (j < m) push('ins', b[j++]);
+      return tidyOps(ops);
+    }
+    // 変更の間にある空白だけの一致は変更に含め、削除 → 追加の順にまとめる（細切れの表示を防ぐ）
+    function tidyOps(ops) {
+      const out = ops.flatMap((o, k) =>
+        o.type === 'eq' && /^\s+$/.test(o.text) && k > 0 && k < ops.length - 1 && ops[k - 1].type !== 'eq' && ops[k + 1].type !== 'eq'
+          ? [{ type: 'del', text: o.text }, { type: 'ins', text: o.text }] : [o]);
+      const res = [];
+      let dels = '', inss = '';
+      const flush = () => { if (dels) res.push({ type: 'del', text: dels }); if (inss) res.push({ type: 'ins', text: inss }); dels = inss = ''; };
+      for (const o of out) {
+        if (o.type === 'eq') { flush(); res.push(o); }
+        else if (o.type === 'del') dels += o.text; else inss += o.text;
+      }
+      flush();
+      return res;
+    }
+    function makeWord(tag, text) { const e = document.createElement(tag); e.className = 'diff-w'; e.textContent = text; return e; }
+
+    // 変更前の HTML をプレビューと同じ加工にかけた要素にする
+    function oldFragment(html) {
+      const div = document.createElement('div');
+      div.innerHTML = html;
+      div.querySelectorAll('.src-line').forEach(n => n.remove());
+      renderGithubAlerts(div);
+      replaceEmoji(div);
+      return div;
+    }
+
+    // el（現在のブロック）に変更前のブロック oldEl との単語単位の差分を書き込む。できなければ false
+    function applyWordDiff(el, oldEl) {
+      const newNodes = textNodesOf([el]);
+      const newText = newNodes.map(n => n.data).join('');
+      const oldText = textNodesOf([oldEl]).map(n => n.data).join('');
+      const ops = diffTokens(tokenize(oldText), tokenize(newText));
+      if (!ops) return false;
+      const changed = ops.filter(o => o.type !== 'eq').reduce((sum, o) => sum + o.text.trim().length, 0);
+      const total = oldText.trim().length + newText.trim().length;
+      // ほとんど書き換わっている場合は、変更前の内容をまとめて見せた方が読みやすい
+      if (!changed || changed / Math.max(1, total) > 0.7) return changed ? false : true;
+
+      let k = 0, off = 0;
+      newNodes.forEach((node, idx) => {
+        const text = node.data, frag = document.createDocumentFragment();
+        let pos = 0, touched = false;
+        while (pos < text.length || (idx === newNodes.length - 1 && k < ops.length && ops[k].type === 'del')) {
+          // 空白・改行だけの変更は表示しない（HTML の整形の違いで生じるため）
+          while (k < ops.length && ops[k].type === 'del') {
+            if (ops[k].text.trim()) { frag.append(makeWord('del', ops[k].text)); touched = true; }
+            k++;
+          }
+          if (pos >= text.length) break;
+          if (k >= ops.length) { frag.append(text.slice(pos)); break; }
+          const op = ops[k], take = Math.min(op.text.length - off, text.length - pos), piece = text.slice(pos, pos + take);
+          if (op.type === 'ins' && piece.trim()) { frag.append(makeWord('ins', piece)); touched = true; } else frag.append(piece);
+          pos += take; off += take;
+          if (off >= op.text.length) { k++; off = 0; }
+        }
+        if (touched) node.replaceWith(frag);
+      });
+      return true;
+    }
+
+    // 変更前後のブロック列を対応づける（本文が同じものを一致とみなす）。
+    // 戻り値: [{ type: 'eq'|'del'|'ins', o, n }]（o: 変更前の番号, n: 変更後の番号）
+    function alignBlocks(oldTexts, newTexts) {
+      const n = oldTexts.length, m = newTexts.length, w = m + 1, dp = new Uint32Array((n + 1) * w);
+      for (let i = n - 1; i >= 0; i--)
+        for (let j = m - 1; j >= 0; j--)
+          dp[i * w + j] = oldTexts[i] === newTexts[j] ? dp[(i + 1) * w + j + 1] + 1 : Math.max(dp[(i + 1) * w + j], dp[i * w + j + 1]);
+      const ops = [];
+      let i = 0, j = 0;
+      while (i < n && j < m) {
+        if (oldTexts[i] === newTexts[j]) ops.push({ type: 'eq', o: i++, n: j++ });
+        else if (dp[(i + 1) * w + j] >= dp[i * w + j + 1]) ops.push({ type: 'del', o: i++ });
+        else ops.push({ type: 'ins', n: j++ });
+      }
+      while (i < n) ops.push({ type: 'del', o: i++ });
+      while (j < m) ops.push({ type: 'ins', n: j++ });
+      return ops;
+    }
+    const RICH = '.code-wrap,.mermaid-block,table,.math-display,pre';
+    const isRich = el => el.matches(RICH) || !!el.querySelector(RICH);
+    const blockText = el => el.textContent.replace(/\s+/g, ' ').trim();
+
+    // 削除された内容 / 変更前の内容を折りたたみで表示する要素
+    function makeGhost(kind, html) {
+      const d = document.createElement('details');
+      d.className = 'diff-ghost diff-ghost-' + kind;
+      const body = oldFragment(html);
+      body.className = 'diff-ghost-body';
+      renderMath(body);
+      const preview = body.textContent.replace(/\s+/g, ' ').trim().slice(0, 80);
+      const summary = document.createElement('summary');
+      summary.textContent = kind === 'del' ? '− 削除された内容' : '~ 変更前の内容';
+      const pv = document.createElement('span');
+      pv.className = 'diff-ghost-preview';
+      pv.textContent = preview;
+      summary.append(pv);
+      d.append(summary, body);
+      return d;
+    }
+
+    function applyDiff() {
+      clearDiff();
+      const nav = $('diffNav');
+      if (!diffState.enabled) { nav.hidden = true; return; }
+      nav.hidden = false;
+      const base = diffState.base || 'HEAD';
+      const hunks = diffState.hunks || [];
+      if (diffState.available === false) { $('diffSummary').textContent = `${base}: Git の差分を取得できません`; return; }
+
+      const blocks = markerBlocks();
+      const counts = { add: 0, mod: 0, del: 0 };
+      for (const h of hunks) {
+        counts[h.kind] = (counts[h.kind] || 0) + 1;
+        const tops = topBlocks();
+        let target = null;
+
+        if (h.kind === 'del') {
+          // 削除位置（直前の行 s）を含むブロックの後ろに、削除された内容を入れる
+          const ghost = makeGhost('del', h.old_html);
+          const after = h.s > 0 ? tops.filter(t => t.start <= h.s).pop() : null;
+          if (after) after.el.after(ghost); else contentEl.prepend(ghost);
+          diffTargets.push({ el: ghost, kind: 'del' });
+          continue;
+        }
+
+        // 変わったブロックに印（入れ子は一番内側だけ）
+        const hit = blocks.filter(b => h.s <= b.end && h.e >= b.start).map(b => b.el);
+        const inner = hit.filter(el => !hit.some(o => o !== el && el.contains(o)));
+        inner.forEach(el => el.classList.add('diff-' + h.kind));
+        target = inner[0] || null;
+
+        if (h.kind === 'mod') {
+          // 変更前後の段落を対応づけ、組になったものは単語単位、片方にしかないものは追加 / 削除として見せる
+          const group = tops.filter(t => t.start <= h.ctx[1] && t.end >= h.ctx[0]).map(t => t.el);
+          const oldEls = Array.from(oldFragment(h.old_html).children);
+          const ops = alignBlocks(oldEls.map(blockText), group.map(blockText));
+          let cursor = group[0]?.previousElementSibling;
+          while (cursor && cursor.classList.contains('src-line')) cursor = cursor.previousElementSibling;
+          const insertGhost = ghost => {
+            if (cursor) cursor.after(ghost); else if (group[0]) group[0].before(ghost); else contentEl.append(ghost);
+            cursor = ghost;
+          };
+          for (let k = 0; k < ops.length; k++) {
+            const op = ops[k];
+            if (op.type === 'eq') { cursor = group[op.n]; continue; }
+            // 連続する削除と追加を 1 組ずつ対にする
+            const dels = [], inss = [];
+            while (k < ops.length && ops[k].type !== 'eq') { (ops[k].type === 'del' ? dels : inss).push(ops[k]); k++; }
+            k--;
+            for (let p = 0; p < Math.max(dels.length, inss.length); p++) {
+              const oldEl = p < dels.length ? oldEls[dels[p].o] : null;
+              const newEl = p < inss.length ? group[inss[p].n] : null;
+              if (oldEl && newEl) {
+                if (!newEl.matches('.diff-mod,.diff-add') && !newEl.querySelector('.diff-mod,.diff-add')) newEl.classList.add('diff-mod');
+                // コード・図・表・数式や、ほぼ書き換えたものは、変更前の内容をまとめて見せる
+                if (isRich(newEl) || isRich(oldEl) || !applyWordDiff(newEl, oldEl)) {
+                  cursor = newEl;
+                  insertGhost(makeGhost('mod', oldEl.outerHTML));
+                } else cursor = newEl;
+                diffTargets.push({ el: newEl.querySelector('ins.diff-w,del.diff-w') || newEl, kind: 'mod' });
+              } else if (newEl) {
+                newEl.querySelectorAll('.diff-mod').forEach(e => e.classList.remove('diff-mod'));
+                newEl.classList.remove('diff-mod');
+                newEl.classList.add('diff-add');
+                cursor = newEl;
+                diffTargets.push({ el: newEl, kind: 'add' });
+              } else {
+                const ghost = makeGhost('del', oldEl.outerHTML);
+                insertGhost(ghost);
+                diffTargets.push({ el: ghost, kind: 'del' });
+              }
+            }
+          }
+          continue;
+        }
+        if (target) diffTargets.push({ el: target, kind: h.kind });
+      }
+
+      diffTargets.sort((a, b) => a.el.getBoundingClientRect().top - b.el.getBoundingClientRect().top);
+      // 件数はブロック単位の結果で数える（Git の変更単位だと、変更と削除が 1 つにまとまることがある）
+      counts.add = counts.mod = counts.del = 0;
+      diffTargets.forEach(t => counts[t.kind]++);
+      const total = counts.add + counts.mod + counts.del;
+      $('diffSummary').textContent = total
+        ? `${base} との差分 ${total} か所（+${counts.add} ~${counts.mod} −${counts.del}）`
+        : `${base} から変更なし`;
+      $('diffPrev').disabled = $('diffNext').disabled = !diffTargets.length;
+      positionDiffMarkers();
+    }
+
+    // スクロールバーの横に、文書全体のどこが変わったかを示す
+    function positionDiffMarkers() {
+      const box = $('diffMarkers');
+      box.innerHTML = '';
+      if (!diffTargets.length) return;
+      const header = document.querySelector('header');
+      const top = header ? header.getBoundingClientRect().height + 4 : 0;
+      box.style.top = top + 'px';
+      const docH = Math.max(1, document.documentElement.scrollHeight);
+      const trackH = window.innerHeight - top - 4;
+      diffTargets.forEach((t, i) => {
+        const r = t.el.getBoundingClientRect();
+        const m = document.createElement('div');
+        m.className = 'm-' + t.kind;
+        m.style.top = ((r.top + window.scrollY) / docH * trackH) + 'px';
+        m.style.height = Math.max(3, r.height / docH * trackH) + 'px';
+        m.title = { add: '追加', mod: '変更', del: '削除' }[t.kind];
+        m.addEventListener('click', () => gotoDiff(i));
+        box.appendChild(m);
       });
     }
+    let diffResizeTimer = null;
+    window.addEventListener('resize', () => { clearTimeout(diffResizeTimer); diffResizeTimer = setTimeout(positionDiffMarkers, 150); });
+
+    function gotoDiff(i) {
+      if (!diffTargets.length) return;
+      diffIdx = (i + diffTargets.length) % diffTargets.length;
+      const el = diffTargets[diffIdx].el;
+      if (el.tagName === 'DETAILS') el.open = true;
+      el.scrollIntoView({ block: 'center' });
+      contentEl.querySelectorAll('.diff-flash').forEach(e => e.classList.remove('diff-flash'));
+      void el.offsetWidth; el.classList.add('diff-flash');
+      // 移動した位置がエディタのスクロール同期で戻されないようにする
+      scrollSyncPaused = true; clearTimeout(scrollSyncTimer);
+      scrollSyncTimer = setTimeout(() => { scrollSyncPaused = false; }, 3000);
+    }
+    $('diffNext').addEventListener('click', () => gotoDiff(diffIdx + 1));
+    $('diffPrev').addEventListener('click', () => gotoDiff(diffIdx < 0 ? diffTargets.length - 1 : diffIdx - 1));
 
     // ── プレゼンモード ────────────────────────────────────────────
     // --- （<hr>）でスライドを区切る。<hr> が無ければ h1/h2 ごとに区切る
     const slidesEl = $('slides'), slideBody = $('slideBody');
     let slides = [], slideIdx = 0;
     function buildSlides() {
-      const kids = Array.from(contentEl.children);
+      const kids = Array.from(contentEl.children).filter(k => !k.classList.contains('diff-ghost'));
       const useHr = kids.some(k => k.tagName === 'HR');
       slides = [[]];
       for (const k of kids) {

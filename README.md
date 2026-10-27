@@ -23,7 +23,7 @@ Live Markdown preview for Neovim. A single Rust binary, fully offline, no Node.j
 | Sync | Block-accurate scroll sync, click-to-jump, follows the Markdown buffer you switch to |
 | Navigation | TOC panel (`t`), search (`/` or Ctrl+F), heading anchors |
 | Modes | Presentation mode (`p`, slides split on `---`), print preview with A4 page guides |
-| Git | `:MdPreviewDiff` marks blocks changed since `HEAD` |
+| Git | `:MdPreviewDiff` shows changes against `HEAD`, the index or any branch: word-level inline diff, deleted and previous content, change count, next/previous navigation and scrollbar markers |
 | Export | PDF / DOCX / HTML / EPUB / Markdown with paper size, margins, font, TOC, numbering and custom Typst templates |
 | Look | Dark / light / auto theme, custom CSS |
 | Platforms | Linux (x86_64, arm64), macOS (Intel, Apple Silicon), Windows, WSL |
@@ -76,7 +76,7 @@ Open a Markdown file and run `:MarkdownPreview`.
 | `:MarkdownPreviewStop` / `:MdPreviewStop` | Stop it |
 | `:MarkdownPreviewToggle` | Start or stop |
 | `:MdPreviewExport {format} [path]` | Export the current buffer: `pdf`, `docx`, `html`, `epub`, `markdown`. Without `path`, it is saved next to the file |
-| `:MdPreviewDiff` | Show or hide changes since Git `HEAD` |
+| `:MdPreviewDiff [base]` | Show or hide Git changes. With `base` (`HEAD`, `staged`, a branch, tag or commit) compare against it; `off` hides them |
 | `:MdPreviewInstall` | Download or update the binary, pandoc and Typst |
 
 Keys in the browser:
@@ -106,7 +106,9 @@ require("md_preview").setup({
   custom_css = "",        -- path to a CSS file loaded after the built-in styles
   wiki_links = true,      -- render [[Page]] links
   browser_keys = true,    -- keyboard shortcuts in the preview (t, /, Ctrl+F, p); false if they clash with a Vim extension
-  git_diff = false,       -- mark blocks changed since HEAD (toggle with :MdPreviewDiff)
+  git_diff = false,       -- show Git changes in the preview (toggle with :MdPreviewDiff)
+  git_diff_base = "HEAD", -- what to compare against: "HEAD" | "staged" | a branch, tag or commit
+  git_diff_colors = true, -- use the editor's diff colors (gitsigns, Added, DiffAdd, ...)
 
   export = {
     pdf_engine  = "typst",  -- "typst"; anything else skips downloading Typst
@@ -125,6 +127,18 @@ require("md_preview").setup({
 ```
 
 Vimscript users can set `g:md_preview_port` and `g:md_preview_auto_open`.
+
+### Git diff
+
+![git diff](docs/diff.png)
+
+`:MdPreviewDiff` compares the buffer, including unsaved edits, with `HEAD`. `:MdPreviewDiff main` compares with a branch and `:MdPreviewDiff staged` with the index, which is handy for reviewing a pull request or what you are about to commit.
+
+- Changed paragraphs show inserted words underlined and removed words struck through. Japanese and other text without spaces is compared character by character.
+- Removed paragraphs appear as a collapsed "removed" box where they were. For code, tables, diagrams and math, or paragraphs that were mostly rewritten, a collapsed box shows the previous version instead.
+- Changed blocks get a bar and a symbol (`+` added, `~` changed, `−` removed), so they can be told apart without color.
+- The header shows the number of changes with ↑ / ↓ to jump between them, and markers beside the scrollbar show where they are in the document.
+- Colors follow your editor's diff colors when they are readable on the preview's theme, and fall back to green, yellow and red otherwise.
 
 ### Custom PDF template
 

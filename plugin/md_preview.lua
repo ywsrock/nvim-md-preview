@@ -64,10 +64,14 @@ end, {
   end,
 })
 
-vim.api.nvim_create_user_command("MdPreviewDiff", function()
+vim.api.nvim_create_user_command("MdPreviewDiff", function(opts)
   local m = ensure_setup()
-  if m then m.toggle_diff() end
-end, { desc = "Git の HEAD からの変更をプレビューに表示する/しない" })
+  if m then m.toggle_diff(opts.args) end
+end, {
+  nargs = "?",
+  desc = "Git の差分を表示: :MdPreviewDiff（切り替え）/ {HEAD|staged|ブランチ}（基準を変えて表示）/ off",
+  complete = function(arg_lead) return require("md_preview")._diff_complete(arg_lead) end,
+})
 
 vim.api.nvim_create_user_command("MdPreviewInstall", function()
   local ok, m = pcall(require, "md_preview")

@@ -5,3 +5,4 @@
 # Claude Code の作業ディレクトリ
 .claude/
 doc/tags
+.playwright-cli/

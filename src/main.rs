@@ -205,18 +205,46 @@ async fn handle_export(state: &AppState, params: &[rmpv::Value]) {
     );
 }
 
-/// `md_preview_diff` 処理 — Git の HEAD との差分（変更行の範囲）を受け取ってブラウザに送る
-/// params: [ranges]  ranges = [[start, end, kind], ...]（kind: "add" | "mod" | "del"）。空配列で表示を消す
+/// `md_preview_diff` 処理 — Git の差分を受け取ってブラウザに送る
+/// params: [hunks, info]
+///   hunks = [[s, e, kind, old_md, ctx_s, ctx_e], ...]（kind: "add" | "mod" | "del"）
+///   info  = { enabled, base, available, colors = { add, mod, del } }
+/// 変更前の Markdown（old_md）はここで HTML にしてから送る
 async fn handle_diff(state: &AppState, params: &[rmpv::Value]) {
-    let ranges: Vec<serde_json::Value> = params.first()
+    let num = |v: Option<&rmpv::Value>| v.and_then(|v| v.as_u64().or_else(|| v.as_i64().map(|n| n.max(0) as u64)));
+    let render_opts = *state.render_opts.read().await;
+    let hunks: Vec<serde_json::Value> = params.first()
         .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|r| {
-            let r = r.as_array()?;
-            let num = |v: &rmpv::Value| v.as_u64().or_else(|| v.as_i64().map(|n| n.max(0) as u64));
-            Some(serde_json::json!([num(r.first()?)?, num(r.get(1)?)?, r.get(2)?.as_str()?]))
+        .map(|arr| arr.iter().filter_map(|h| {
+            let h = h.as_array()?;
+            let kind = h.get(2)?.as_str()?;
+            let old_md = h.get(3).and_then(|v| v.as_str()).unwrap_or("");
+            let old_html = if old_md.is_empty() { String::new() } else { markdown::to_html(old_md, 0, render_opts) };
+            Some(serde_json::json!({
+                "s": num(h.first())?, "e": num(h.get(1))?, "kind": kind,
+                "old_html": old_html,
+                "ctx": [num(h.get(4)).unwrap_or(0), num(h.get(5)).unwrap_or(0)],
+            }))
         }).collect())
         .unwrap_or_default();
-    let payload = serde_json::json!({ "type": "diff", "ranges": ranges }).to_string();
+
+    // info は map。値を JSON に写す（色は文字列のみ）
+    let info = params.get(1);
+    let get = |key: &str| info.and_then(|v| v.as_map())
+        .and_then(|m| m.iter().find(|(k, _)| k.as_str() == Some(key)).map(|(_, v)| v.clone()));
+    let color = |key: &str| get("colors")
+        .and_then(|c| c.as_map().and_then(|m| m.iter().find(|(k, _)| k.as_str() == Some(key)).map(|(_, v)| v.clone())))
+        .and_then(|v| v.as_str().map(str::to_string))
+        .filter(|c| c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|ch| ch.is_ascii_hexdigit()));
+
+    let payload = serde_json::json!({
+        "type": "diff",
+        "enabled": get("enabled").and_then(|v| v.as_bool()).unwrap_or(!hunks.is_empty()),
+        "available": get("available").and_then(|v| v.as_bool()).unwrap_or(true),
+        "base": get("base").and_then(|v| v.as_str().map(str::to_string)).unwrap_or_else(|| "HEAD".into()),
+        "colors": { "add": color("add"), "mod": color("mod"), "del": color("del") },
+        "hunks": hunks,
+    }).to_string();
     *state.latest_diff.write().await = Some(payload.clone());
     state.send_scroll(payload);
 }
