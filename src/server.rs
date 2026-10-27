@@ -324,7 +324,7 @@ async fn convert_with_pandoc(
             error_response(&format!(
                 "pandoc 変換に失敗しました。pandoc がインストールされているか確認してください。\n\
                  インストール: :MdPreviewInstall\n\nエラー: {}",
-                &stderr[..stderr.len().min(500)]
+                truncate_chars(&stderr, 500)
             ))
         }
         Err(e) => error_response(&format!(
@@ -343,26 +343,23 @@ async fn convert_with_typst(typst_bin: &str, md_path: &PathBuf, stem: &str) -> R
     };
 
     // Typst の cmarker パッケージで Markdown をそのまま処理
-    let typ_content = format!(
-        r#"#import "@preview/cmarker:0.1.4": render
+    // Markdown は raw ブロックに埋め込むと ``` を含む文書で壊れるので、別ファイルにして read() で読む
+    let typ_content = r#"#import "@preview/cmarker:0.1.4": render
 #set page(margin: 2cm)
 #set text(font: ("Noto Serif CJK JP", "Noto Serif", "Georgia"), size: 11pt)
 #set heading(numbering: none)
 
-#render(
-  ```
-{}
-```,
-  h1-level: 1
-)
-"#,
-        md_content.replace('`', "\\`")
-    );
+#render(read("nvim_md_preview_export.md"), h1-level: 1)
+"#;
 
+    let md_tmp_path = std::env::temp_dir().join("nvim_md_preview_export.md");
     let typ_path = std::env::temp_dir().join("nvim_md_preview_export.typ");
     let pdf_path = std::env::temp_dir().join("nvim_md_preview_export.pdf");
 
-    if let Err(e) = tokio::fs::write(&typ_path, &typ_content).await {
+    if let Err(e) = tokio::fs::write(&md_tmp_path, &md_content).await {
+        return error_response(&format!("一時ファイルの作成に失敗: {}", e));
+    }
+    if let Err(e) = tokio::fs::write(&typ_path, typ_content).await {
         return error_response(&format!("一時ファイルの作成に失敗: {}", e));
     }
 
@@ -372,6 +369,7 @@ async fn convert_with_typst(typst_bin: &str, md_path: &PathBuf, stem: &str) -> R
         .await;
 
     let _ = tokio::fs::remove_file(&typ_path).await;
+    let _ = tokio::fs::remove_file(&md_tmp_path).await;
 
     match result {
         Ok(output) if output.status.success() => {
@@ -387,7 +385,7 @@ async fn convert_with_typst(typst_bin: &str, md_path: &PathBuf, stem: &str) -> R
             let stderr = String::from_utf8_lossy(&output.stderr);
             error_response(&format!(
                 "Typst 変換に失敗しました。:MdPreviewInstall で Typst をインストールしてください。\n\nエラー: {}",
-                &stderr[..stderr.len().min(500)]
+                truncate_chars(&stderr, 500)
             ))
         }
         Err(e) => error_response(&format!(
@@ -397,12 +395,38 @@ async fn convert_with_typst(typst_bin: &str, md_path: &PathBuf, stem: &str) -> R
     }
 }
 
+/// 文字境界を壊さずに先頭 max 文字を返す（バイト単位スライスは多バイト文字で panic する）
+fn truncate_chars(s: &str, max: usize) -> &str {
+    match s.char_indices().nth(max) {
+        Some((i, _)) => &s[..i],
+        None => s,
+    }
+}
+
+/// Content-Disposition を組み立てる
+/// ヘッダー値は ASCII のみ許されるので、filename は ASCII に置き換え、
+/// 元の名前は RFC 5987 の filename* にパーセントエンコードして入れる
+fn content_disposition(filename: &str) -> String {
+    let ascii: String = filename
+        .chars()
+        .map(|c| if c.is_ascii_graphic() && c != '"' && c != '\\' { c } else { '_' })
+        .collect();
+    let encoded: String = filename
+        .bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'.' | b'-' | b'_' | b'~' => (b as char).to_string(),
+            _ => format!("%{:02X}", b),
+        })
+        .collect();
+    format!("attachment; filename=\"{}\"; filename*=UTF-8''{}", ascii, encoded)
+}
+
 /// ダウンロードレスポンスを生成
 fn download_response(data: Vec<u8>, filename: &str, mime: &str) -> Response {
     (
         [
             (header::CONTENT_TYPE, mime.to_string()),
-            (header::CONTENT_DISPOSITION, format!("attachment; filename=\"{}\"", filename)),
+            (header::CONTENT_DISPOSITION, content_disposition(filename)),
         ],
         data,
     ).into_response()
@@ -641,12 +665,12 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
         Export
       </button>
       <div id="exportMenu" style="display:none;position:absolute;right:0;top:100%;min-width:160px;background:var(--panel);border:1px solid var(--stroke);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.3);z-index:20;overflow:hidden">
-        <button class="export-item" onclick="exportAs('pdf')">📄 PDF <span style="font-size:.7rem;color:var(--fg-muted)">(Typst)</span></button>
-        <button class="export-item" onclick="exportAs('docx')">📝 DOCX <span style="font-size:.7rem;color:var(--fg-muted)">(pandoc)</span></button>
-        <button class="export-item" onclick="exportAs('html')">🌐 HTML <span style="font-size:.7rem;color:var(--fg-muted)">(pandoc)</span></button>
-        <button class="export-item" onclick="exportAs('epub')">📚 EPUB <span style="font-size:.7rem;color:var(--fg-muted)">(pandoc)</span></button>
+        <button class="export-item" data-format="pdf">📄 PDF <span style="font-size:.7rem;color:var(--fg-muted)">(Typst)</span></button>
+        <button class="export-item" data-format="docx">📝 DOCX <span style="font-size:.7rem;color:var(--fg-muted)">(pandoc)</span></button>
+        <button class="export-item" data-format="html">🌐 HTML <span style="font-size:.7rem;color:var(--fg-muted)">(pandoc)</span></button>
+        <button class="export-item" data-format="epub">📚 EPUB <span style="font-size:.7rem;color:var(--fg-muted)">(pandoc)</span></button>
         <div style="height:1px;background:var(--stroke);margin:.25rem 0"></div>
-        <button class="export-item" onclick="exportAs('markdown')">🔤 Markdown</button>
+        <button class="export-item" data-format="markdown">🔤 Markdown</button>
       </div>
     </div>
   </header>
@@ -1140,20 +1164,43 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
     });
     document.addEventListener('click', () => { exportMenu.style.display = 'none'; });
 
-    function exportAs(format) {
+    // type="module" のスクリプトは onclick 属性から関数を参照できないので、リスナーで登録する
+    exportMenu.querySelectorAll('[data-format]').forEach(item => {
+      item.addEventListener('click', () => exportAs(item.dataset.format));
+    });
+
+    // fetch で取得してからダウンロードする（失敗時にプレビュー画面がエラー JSON に遷移しないように）
+    async function exportAs(format) {
       exportMenu.style.display = 'none';
-      // PDF はブラウザ印刷を使用（Typst は /export 経由）
-      if (format === 'pdf') {
-        window.open(`/export?format=pdf`, '_blank');
-        return;
+      const label = exportBtn.lastChild.textContent;
+      exportBtn.disabled = true;
+      exportBtn.lastChild.textContent = ' 変換中…';
+      try {
+        const res = await fetch(`/export?format=${encodeURIComponent(format)}`);
+        if (!res.ok) {
+          let msg = `HTTP ${res.status}`;
+          try { msg = (await res.json()).error || msg; } catch (_) {}
+          throw new Error(msg);
+        }
+        const disposition = res.headers.get('Content-Disposition') || '';
+        // 日本語名を保つため filename*（RFC 5987）を優先し、無ければ filename を使う
+        const star  = disposition.match(/filename\*=UTF-8''([^;]+)/);
+        const plain = disposition.match(/filename="([^"]+)"/);
+        const filename = star ? decodeURIComponent(star[1]) : plain ? plain[1] : `export.${format}`;
+        const url = URL.createObjectURL(await res.blob());
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+      } catch (e) {
+        alert(`エクスポートに失敗しました (${format})\n\n${e.message}`);
+      } finally {
+        exportBtn.disabled = false;
+        exportBtn.lastChild.textContent = label;
       }
-      // その他は /export エンドポイント経由でダウンロード
-      const link = document.createElement('a');
-      link.href = `/export?format=${format}`;
-      link.style.display = 'none';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
     }
   </script>
 </body>
