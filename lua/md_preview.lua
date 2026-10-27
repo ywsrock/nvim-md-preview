@@ -479,8 +479,6 @@ end
 
 --- Typst をインストール
 function M._install_typst(install_dir, sysname, machine, is_win, ext)
-  -- Typst GitHub Releases の URL
-  -- https://github.com/typst/typst/releases/latest/download/
   local fname
   if sysname == "Linux" then
     fname = "typst-x86_64-unknown-linux-musl.tar.xz"
@@ -495,13 +493,33 @@ function M._install_typst(install_dir, sysname, machine, is_win, ext)
   local archive = install_dir .. "/" .. fname
   local typst   = install_dir .. "/typst" .. ext
 
+  vim.notify("[md-preview] Typst をダウンロード中...", vim.log.levels.INFO)
   if not M._download(url, archive) then return false end
 
   -- 解凍
+  -- アーカイブ構造: typst-<target>/typst[.exe]
   if fname:match("%.tar%.xz$") then
-    vim.fn.system(string.format('tar -xJf "%s" -C "%s" --strip-components=1', archive, install_dir))
+    -- Linux / macOS: tar で --strip-components=1 して typst だけ取り出す
+    vim.fn.system(string.format(
+      'tar -xJf "%s" -C "%s" --strip-components=1 --wildcards "*/typst"',
+      archive, install_dir
+    ))
+  elseif is_win then
+    -- Windows: PowerShell Expand-Archive で解凍し typst.exe を移動
+    local tmp_dir = install_dir .. "\\typst_tmp"
+    vim.fn.system(string.format(
+      'powershell -NoProfile -Command "Expand-Archive -Path \'%s\' -DestinationPath \'%s\' -Force"',
+      archive, tmp_dir
+    ))
+    -- typst.exe を探して移動
+    local found = vim.fn.glob(tmp_dir .. "\\**\\typst.exe", false, true)
+    if #found > 0 then
+      vim.fn.system(string.format('move /Y "%s" "%s"', found[1], typst))
+    end
+    vim.fn.system('rmdir /s /q "' .. tmp_dir .. '" 2>nul')
   else
-    vim.fn.system(string.format('unzip -jo "%s" "*/typst%s" -d "%s"', archive, ext, install_dir))
+    -- macOS zip フォールバック（通常は tar.xz を使う）
+    vim.fn.system(string.format('unzip -jo "%s" "*/typst" -d "%s"', archive, install_dir))
   end
   vim.fn.delete(archive)
 
@@ -509,6 +527,7 @@ function M._install_typst(install_dir, sysname, machine, is_win, ext)
     if not is_win then vim.fn.system('chmod +x "' .. typst .. '"') end
     return true
   end
+  vim.notify("[md-preview] Typst の解凍に失敗しました", vim.log.levels.WARN)
   return false
 end
 
