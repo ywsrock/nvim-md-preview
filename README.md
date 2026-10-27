@@ -1,52 +1,39 @@
 # nvim-md-preview
 
-Neovim 用 Markdown プレビュープラグイン。Rust 製のローカル HTTP サーバーでブラウザにリアルタイムプレビューを提供します。
+Live Markdown preview for Neovim. A single Rust binary, fully offline, no Node.js or Deno.
 
-## 特徴
+[日本語](README.ja.md)
 
-- ⚡ リアルタイムプレビュー（WebSocket）
-- 🎨 Mermaid ダイアグラム（フローチャート、シーケンス図など）
-- 📐 KaTeX 数式レンダリング（`$...$`, `$$...$$`）
-- 🖍️ シンタックスハイライト（highlight.js、190言語対応）
-- 🌙 ダーク / ライトテーマ切り替え
-- 📜 スクロール同期（カーソル追従）
-- 🔗 見出しアンカーリンク
-- ⚠️ GitHub Alerts（`> [!NOTE]` など）
-- 😊 絵文字（`:smile:` → 😊）
-- 📦 YAML front matter パネル表示
-- 🖼️ 相対パス画像の自動解決
-- 📡 オフライン完全動作（JS/CSS をバイナリに埋め込み済み）
-- 🔌 ポート競合時は自動で空きポートを使用
-- 📤 エクスポート（PDF / DOCX / HTML / EPUB / Markdown）
+![demo](docs/demo.gif)
 
-## 動作環境
+- **Accurate two-way sync**: the preview follows your cursor block by block, and clicking a paragraph in the preview jumps to that line in Neovim.
+- **Fast on large documents**: only changed blocks are re-rendered; diagrams and scroll position are kept while you type.
+- **Works offline**: Mermaid, KaTeX, highlight.js and fonts are embedded in the binary.
+- **Export built in**: PDF (Typst), DOCX / HTML / EPUB (pandoc) and Markdown, from the browser or `:MdPreviewExport`. Unsaved edits are included.
+- **Made for long documents**: table of contents, in-page search, footnote popups, presentation mode and print preview.
+- **Secure by default**: listens on `127.0.0.1` only and rejects cross-site requests. LAN sharing needs a per-session token.
 
-| OS | 対応 |
+## Features
+
+| | |
 |---|---|
-| Linux | ✅ |
-| macOS (Intel / Apple Silicon) | ✅ |
-| Windows ネイティブ | ✅ |
-| Windows (WSL) | ✅ |
+| Rendering | GFM tables, task lists, footnotes, strikethrough, Mermaid, KaTeX math (`$...$`, `$$...$$`), syntax highlighting (190 languages), emoji `:smile:`, YAML front matter |
+| Callouts | GitHub alerts (`> [!NOTE]`) and Obsidian callouts (`> [!info] Title`, foldable `> [!todo]-`) |
+| Links | Wiki links `[[Page]]` / `[[Page\|label]]`; local `.md` links and wiki links open in Neovim |
+| Sync | Block-accurate scroll sync, click-to-jump, follows the Markdown buffer you switch to |
+| Navigation | TOC panel (`t`), search (`/` or Ctrl+F), heading anchors |
+| Modes | Presentation mode (`p`, slides split on `---`), print preview with A4 page guides |
+| Git | `:MdPreviewDiff` marks blocks changed since `HEAD` |
+| Export | PDF / DOCX / HTML / EPUB / Markdown with paper size, margins, font, TOC, numbering and custom Typst templates |
+| Look | Dark / light / auto theme, custom CSS |
+| Platforms | Linux (x86_64, arm64), macOS (Intel, Apple Silicon), Windows, WSL |
 
----
+## Requirements
 
-## インストール
+- Neovim 0.9 or later
+- `curl` (or `wget` / PowerShell) to download the binary. `tar` is used to unpack pandoc and Typst and is preinstalled on macOS, Linux and Windows 10+.
 
-### Vundle
-
-`~/.config/nvim/plugin/plugins.vim` に追加:
-
-```vim
-Plugin 'ywsrock/nvim-md-preview'
-```
-
-`:PluginInstall` 後に実行:
-
-```vim
-:MdPreviewInstall
-```
-
-または初回 `:MarkdownPreview` 実行時に自動ダウンロードします。
+## Installation
 
 ### lazy.nvim
 
@@ -56,7 +43,7 @@ Plugin 'ywsrock/nvim-md-preview'
   ft = "markdown",
   build = ":MdPreviewInstall",
   config = function()
-    require("md_preview").setup()
+    require("md_preview").setup({})
   end,
 }
 ```
@@ -67,196 +54,130 @@ Plugin 'ywsrock/nvim-md-preview'
 Plug 'ywsrock/nvim-md-preview'
 ```
 
-`:PlugInstall` 後:
-
-```vim
-:MdPreviewInstall
-```
+Then run `:MdPreviewInstall` once.
 
 ### packer.nvim
 
 ```lua
-use {
-  "ywsrock/nvim-md-preview",
-  run = ":MdPreviewInstall",
+use { "ywsrock/nvim-md-preview", run = ":MdPreviewInstall" }
+```
+
+`:MdPreviewInstall` downloads the preview binary plus pandoc and Typst in parallel, showing progress on the command line. If you skip it, the binary is downloaded the first time you run `:MarkdownPreview`.
+
+Run `:checkhealth md_preview` if something does not work.
+
+## Usage
+
+Open a Markdown file and run `:MarkdownPreview`.
+
+| Command | |
+|---|---|
+| `:MarkdownPreview` / `:MdPreview` | Start the preview |
+| `:MarkdownPreviewStop` / `:MdPreviewStop` | Stop it |
+| `:MarkdownPreviewToggle` | Start or stop |
+| `:MdPreviewExport {format} [path]` | Export the current buffer: `pdf`, `docx`, `html`, `epub`, `markdown`. Without `path`, it is saved next to the file |
+| `:MdPreviewDiff` | Show or hide changes since Git `HEAD` |
+| `:MdPreviewInstall` | Download or update the binary, pandoc and Typst |
+
+Keys in the browser:
+
+| Key | |
+|---|---|
+| `t` | Toggle the table of contents |
+| `/`, Ctrl+F | Search (Enter / Shift+Enter to move, Esc to close) |
+| `p` | Presentation mode (arrows to move, `f` fullscreen, Esc to exit) |
+| Click a paragraph | Jump to that line in Neovim |
+
+## Configuration
+
+Defaults are shown. Pass only what you want to change.
+
+```lua
+require("md_preview").setup({
+  port = 9876,            -- the next free port is used if this one is taken
+  host = "127.0.0.1",     -- "0.0.0.0" to view from other devices on your LAN (a token is required automatically)
+  auto_open = true,       -- open the browser when the preview starts
+  scroll_sync = true,     -- scroll the preview with the cursor
+  follow_buffer = true,   -- switch the preview when you enter another Markdown buffer
+  debounce_ms = 80,       -- wait this long after typing before updating
+  theme = "auto",         -- "auto" (follow the OS) | "dark" | "light"
+  custom_css = "",        -- path to a CSS file loaded after the built-in styles
+  wiki_links = true,      -- render [[Page]] links
+  git_diff = false,       -- mark blocks changed since HEAD (toggle with :MdPreviewDiff)
+
+  export = {
+    pdf_engine  = "typst",  -- "typst"; anything else skips downloading Typst
+    docx_engine = "pandoc", -- "pandoc"; anything else skips downloading pandoc
+    pandoc_path = "",       -- empty: use the downloaded copy, then PATH
+    typst_path  = "",
+    paper     = "a4",       -- PDF paper size (any Typst paper name, e.g. "us-letter")
+    margin    = "2cm",
+    font      = "",         -- empty: Noto Serif CJK JP and fallbacks
+    font_size = 11,
+    toc       = false,      -- table of contents (PDF and pandoc formats)
+    numbering = false,      -- numbered headings
+    template  = "",         -- Typst file that exports `template` (see below)
+  },
+})
+```
+
+Vimscript users can set `g:md_preview_port` and `g:md_preview_auto_open`.
+
+### Custom PDF template
+
+`export.template` points to a Typst file that exports a `template` function. It is applied as a show rule around the document:
+
+```typst
+// ~/.config/nvim/md-template.typ
+#let template(doc) = {
+  set page(paper: "a4", header: align(right)[Internal])
+  set text(font: "Inter", size: 10pt)
+  doc
 }
 ```
 
----
+### Viewing from a tablet or another computer
 
-## 使い方
+Set `host = "0.0.0.0"`. Each time the preview starts, a random token is generated and the LAN URLs are shown in Neovim. Only those URLs (or a browser that already opened one) can access the preview.
 
-Markdown ファイルを開いて:
-
-```vim
-:MarkdownPreview        " プレビュー開始
-:MarkdownPreviewStop    " プレビュー停止
-:MarkdownPreviewToggle  " 開始/停止トグル
-
-" 短縮コマンドも使用可能
-:MdPreview
-:MdPreviewStop
-:MdPreviewInstall       " バイナリを手動ダウンロード
-```
-
----
-
-## 設定
-
-### Lua (init.lua)
-
-```lua
-require("md_preview").setup({
-  port      = 9876,   -- HTTP サーバーのポート番号（競合時は自動で別ポートを使用）
-  auto_open = true,   -- プレビュー開始時に自動でブラウザを開く
-
-  -- エクスポート設定
-  export = {
-    -- PDF エンジン: "typst"（高品質・推奨）
-    pdf_engine  = "typst",
-    -- DOCX/HTML/EPUB エンジン: "pandoc"（推奨）
-    docx_engine = "pandoc",
-
-    -- バイナリパスを手動指定（省略時は自動ダウンロード先を使用）
-    pandoc_path = "",
-    typst_path  = "",
-  },
-})
-```
-
-### Vimscript (init.vim)
-
-```vim
-let g:md_preview_port      = 9876   " ポート番号
-let g:md_preview_auto_open = 1      " 自動でブラウザを開く（0 で無効）
-```
-
----
-
-## エクスポート機能
-
-プレビュー画面のツールバーにある **Export ▼** ボタンから各形式でエクスポートできます。
-
-| 形式 | エンジン | 品質 | 必要なもの |
-|---|---|---|---|
-| **PDF** | Typst | ⭐⭐⭐⭐⭐ | `:MdPreviewInstall` で自動インストール |
-| **DOCX** | pandoc | ⭐⭐⭐⭐⭐ | `:MdPreviewInstall` で自動インストール |
-| **HTML** | pandoc | ⭐⭐⭐⭐⭐ | `:MdPreviewInstall` で自動インストール |
-| **EPUB** | pandoc | ⭐⭐⭐⭐ | `:MdPreviewInstall` で自動インストール |
-| **Markdown** | なし | — | 不要 |
-
-### インストール（初回のみ）
-
-`:MdPreviewInstall` を実行すると以下が自動でダウンロードされます：
+## How it works
 
 ```
-# stdpath("data")/nvim-md-preview/ （OS ごとに場所が異なる）
-# Linux:   ~/.local/share/nvim/nvim-md-preview/
-# macOS:   ~/Library/Application Support/nvim/nvim-md-preview/
-# Windows: %LOCALAPPDATA%\nvim-data\nvim-md-preview\
-
-nvim-md-preview    ← プレビューバイナリ
-pandoc             ← DOCX/HTML/EPUB 用（~30MB）
-typst              ← PDF 用（~30MB）
+Neovim ──msgpack-rpc (stdin/stdout)──▶ Rust binary ──WebSocket──▶ Browser
+   ▲                                     │ pulldown-cmark → HTML           │
+   └──────────── click / open link ──────┴──────────────────────────────────┘
 ```
 
-### バイナリパスを手動指定する場合
+The Lua side sends the buffer (debounced) and the cursor line. The binary converts Markdown to HTML with source-line markers, serves the page and assets on `127.0.0.1`, and pushes updates over a WebSocket. Clicks in the preview travel back the same way.
 
-```lua
-require("md_preview").setup({
-  export = {
-    pandoc_path = "/usr/local/bin/pandoc",
-    typst_path  = "/usr/local/bin/typst",
-  },
-})
-```
+## Security
 
----
+The server binds to `127.0.0.1` unless you set `host`. It rejects requests whose `Host` is not a loopback name (DNS rebinding) and any cross-origin request or WebSocket, so other websites open in your browser cannot read your files or control Neovim. `/assets` only serves files inside the document's directory. In LAN mode every request needs the session token.
 
-## Mermaid ダイアグラム
+Versions up to v0.1.0 allowed other websites to read local files while a preview was running. Update with `:MdPreviewInstall`.
 
-````markdown
-```mermaid
-graph TD
-    A[開始] --> B{条件}
-    B -- Yes --> C[処理]
-    B -- No  --> D[終了]
-```
-````
-
-## 数式 (KaTeX)
-
-```markdown
-インライン: $E = mc^2$
-
-ブロック:
-$$
-\int_{-\infty}^{\infty} e^{-x^2} dx = \sqrt{\pi}
-$$
-```
-
-## GitHub Alerts
-
-```markdown
-> [!NOTE]
-> 補足情報です。
-
-> [!WARNING]
-> 注意が必要な情報です。
-
-> [!TIP]
-> ヒントです。
-```
-
----
-
-## 仕組み
-
-```
-Neovim (バッファ変更)
-  ↓ RPC (stdin/stdout msgpack)
-Rust バイナリ
-  ├── pulldown-cmark で Markdown → HTML 変換
-  ├── HTTP/WebSocket サーバー (axum)
-  └── JS/CSS/フォントをバイナリ内蔵（オフライン対応）
-       ↓ WebSocket
-ブラウザ（リアルタイム更新）
-```
-
----
-
-## 開発者向け（ソースからビルド）
+## Building from source
 
 ```bash
 git clone https://github.com/ywsrock/nvim-md-preview
 cd nvim-md-preview
-
-# JS ライブラリをダウンロード（初回のみ）
-bash download-libs.sh
-
-# ビルド
+bash download-libs.sh      # fetch the JS/CSS libraries embedded in the binary
 cargo build --release
 ```
 
-`init.vim` にバイナリパスを設定:
+Then point the plugin at the binary:
 
-```vim
-lua require("md_preview").setup({
-\  binary = vim.fn.expand("~/.vim/bundle/nvim-md-preview/target/release/nvim-md-preview"),
-\ })
+```lua
+require("md_preview").setup({ binary = "/path/to/nvim-md-preview/target/release/nvim-md-preview" })
 ```
 
----
+See [CONTRIBUTING.md](CONTRIBUTING.md) for tests and the development workflow.
 
-## ライセンス
+## Acknowledgements
+
+- [selimacerbas/mdkite.nvim](https://github.com/selimacerbas/mdkite.nvim) for the preview styling, Mermaid rendering and theme design
+- [iamcco/markdown-preview.nvim](https://github.com/iamcco/markdown-preview.nvim) for the install flow, command names and configuration interface
+
+## License
 
 MIT
-
----
-
-## 備考
-
-本プラグインの開発にあたり、以下のプラグインを参考にしました。
-
-- [selimacerbas/mdkite.nvim](https://github.com/selimacerbas/mdkite.nvim) — プレビュー画面のスタイル・Mermaid レンダリング・テーマ設計を参考にしました。
-- [iamcco/markdown-preview.nvim](https://github.com/iamcco/markdown-preview.nvim) — インストール方式・コマンド設計・設定インターフェースを参考にしました。
