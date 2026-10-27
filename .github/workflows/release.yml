@@ -1,0 +1,95 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: nvim-md-preview
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact: nvim-md-preview
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: nvim-md-preview
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: nvim-md-preview.exe
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Download JS libraries (Unix)
+        if: runner.os != 'Windows'
+        run: bash download-libs.sh
+
+      - name: Download JS libraries (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path src/embedded_lib/fonts | Out-Null
+          $base = "https://cdn.jsdelivr.net"
+          function Get-File($url, $out) { Invoke-WebRequest -Uri $url -OutFile $out -UseBasicParsing }
+          Get-File "$base/gh/highlightjs/cdn-release@11/build/highlight.min.js"          "src/embedded_lib/highlight.min.js"
+          Get-File "$base/gh/highlightjs/cdn-release@11/build/styles/github-dark.min.css" "src/embedded_lib/hljs-dark.min.css"
+          Get-File "$base/gh/highlightjs/cdn-release@11/build/styles/github.min.css"      "src/embedded_lib/hljs-light.min.css"
+          Get-File "$base/npm/mermaid@11/dist/mermaid.esm.min.mjs"                        "src/embedded_lib/mermaid.esm.min.mjs"
+          Get-File "$base/npm/katex@0.16/dist/katex.min.js"                               "src/embedded_lib/katex.min.js"
+          Get-File "$base/npm/katex@0.16/dist/contrib/auto-render.min.js"                 "src/embedded_lib/auto-render.min.js"
+          # KaTeX CSS: フォントパスを書き換え
+          $css = (Invoke-WebRequest -Uri "$base/npm/katex@0.16/dist/katex.min.css" -UseBasicParsing).Content
+          $css = $css -replace 'url\(fonts/', 'url(/lib/fonts/'
+          Set-Content -Path "src/embedded_lib/katex.min.css" -Value $css
+          # KaTeX fonts
+          $fonts = @(
+            "KaTeX_AMS-Regular","KaTeX_Caligraphic-Bold","KaTeX_Caligraphic-Regular",
+            "KaTeX_Fraktur-Bold","KaTeX_Fraktur-Regular","KaTeX_Main-Bold",
+            "KaTeX_Main-BoldItalic","KaTeX_Main-Italic","KaTeX_Main-Regular",
+            "KaTeX_Math-BoldItalic","KaTeX_Math-Italic","KaTeX_SansSerif-Bold",
+            "KaTeX_SansSerif-Italic","KaTeX_SansSerif-Regular","KaTeX_Script-Regular",
+            "KaTeX_Size1-Regular","KaTeX_Size2-Regular","KaTeX_Size3-Regular",
+            "KaTeX_Size4-Regular","KaTeX_Typewriter-Regular"
+          )
+          foreach ($f in $fonts) {
+            Get-File "$base/npm/katex@0.16/dist/fonts/${f}.woff2" "src/embedded_lib/fonts/${f}.woff2"
+          }
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Rename artifact
+        shell: bash
+        run: |
+          mv target/${{ matrix.target }}/release/${{ matrix.artifact }} \
+             nvim-md-preview-${{ matrix.target }}${{ runner.os == 'Windows' && '.exe' || '' }}
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: nvim-md-preview-${{ matrix.target }}*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,37 @@
+[package]
+name = "nvim-md-preview"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "nvim-md-preview"
+path = "src/main.rs"
+
+[dependencies]
+# Neovim RPC
+nvim-rs = { version = "0.6", features = ["use_tokio"] }
+
+# 非同期ランタイム
+tokio = { version = "1", features = ["full"] }
+
+# HTTP + WebSocket サーバー
+axum = { version = "0.7", features = ["ws"] }
+tower-http = { version = "0.5", features = ["cors", "fs"] }
+
+# Markdown → HTML 変換
+pulldown-cmark = { version = "0.12", default-features = false, features = ["html"] }
+
+# JSON シリアライズ（タイトル + HTML のペイロード用）
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+
+# プロセス間通信（nvim-rs が内部で使用）
+async-trait = "0.1"
+parity-tokio-ipc = "0.9"
+
+# 状態共有
+tokio-util = { version = "0.7", features = ["codec"] }
+
+[profile.release]
+opt-level = 3
+lto = true

@@ -1,0 +1,312 @@
+-- plugin/md_preview.lua
+-- Neovim 側のグルーコード
+-- Rust バイナリを起動し、バッファ変更を RPC 経由で送る
+
+local M = {}
+
+M._initialized = false
+
+local _plugin_dir = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h:h")
+
+-- 設定のデフォルト値
+M.config = {
+  -- Rust バイナリのパス（install() でダウンロードしたものを優先）
+  binary = vim.fn.stdpath("data") .. "/nvim-md-preview/nvim-md-preview"
+    .. (vim.fn.has("win32") == 1 and ".exe" or ""),
+  port = 9876,
+  auto_open = true,
+}
+
+local state = {
+  job_id = nil,   -- Rust バイナリのジョブID
+  chan_id = nil,  -- RPC チャネルID
+  buf_id = nil,   -- 監視中のバッファ ID
+}
+
+--- バッファ全文を文字列として取得する
+local function get_buf_content(buf)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  return table.concat(lines, "\n")
+end
+
+--- バッファのファイル名を取得する（未保存なら "md Preview"）
+local function get_buf_title(buf)
+  local name = vim.api.nvim_buf_get_name(buf)
+  local filename = vim.fn.fnamemodify(name, ":t")
+  if filename == "" then return "md Preview" end
+  return filename
+end
+
+--- バッファのディレクトリを取得する（相対パス画像の解決に使う）
+local function get_buf_dir(buf)
+  local name = vim.api.nvim_buf_get_name(buf)
+  if name == "" then return "" end
+  return vim.fn.fnamemodify(name, ":h")
+end
+
+--- Rust バイナリに Markdown テキストを送る
+local function send_update(buf)
+  if state.chan_id == nil then return end
+  local content  = get_buf_content(buf)
+  local title    = get_buf_title(buf)
+  local base_dir = get_buf_dir(buf)
+  vim.rpcnotify(state.chan_id, "md_preview_update", content, title, base_dir)
+end
+
+--- Rust バイナリにカーソル行を送る（スクロール同期）
+local function send_scroll(buf)
+  if state.chan_id == nil then return end
+  local line  = vim.api.nvim_win_get_cursor(0)[1]
+  local total = vim.api.nvim_buf_line_count(buf)
+  vim.rpcnotify(state.chan_id, "md_preview_scroll", line, total)
+end
+
+--- バッファの変更イベントを購読する
+local function attach_buffer(buf)
+  if state.buf_id == buf then return end
+
+  state.buf_id = buf
+
+  -- テキスト変更イベント
+  vim.api.nvim_buf_attach(buf, false, {
+    on_lines = function(_, changed_buf, _, _, _, _)
+      vim.schedule(function()
+        send_update(changed_buf)
+      end)
+    end,
+    on_detach = function()
+      state.buf_id = nil
+    end,
+  })
+
+  -- カーソル移動でスクロール同期（バッファごとに1つだけ登録）
+  vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
+    buffer = buf,
+    group  = vim.api.nvim_create_augroup("md_preview_scroll_" .. buf, { clear = true }),
+    callback = function()
+      vim.schedule(function()
+        if state.buf_id == buf then
+          send_scroll(buf)
+        end
+      end)
+    end,
+  })
+
+  -- 初回の内容を即座に送る
+  send_update(buf)
+end
+
+--- Rust バイナリを起動する
+local function start_binary()
+  if state.job_id ~= nil then
+    return true  -- 既に起動済み
+  end
+
+  -- stdin/stdout RPC 方式のため --listen は不要
+  local cmd = {
+    M.config.binary,
+    tostring(M.config.port),
+  }
+
+  -- Rust バイナリを RPC ジョブとして起動
+  state.job_id = vim.fn.jobstart(cmd, {
+    rpc = true,
+    on_exit = function(_, exit_code, _)
+      vim.notify(
+        string.format("[md-preview] バイナリが終了しました (exit: %d)", exit_code),
+        vim.log.levels.WARN
+      )
+      state.job_id = nil
+      state.chan_id = nil
+    end,
+    on_stderr = function(_, data, _)
+      -- Rust の eprintln! 出力をデバッグログに表示
+      for _, line in ipairs(data) do
+        if line ~= "" then
+          vim.notify("[md-preview] " .. line, vim.log.levels.DEBUG)
+        end
+      end
+    end,
+  })
+
+  if state.job_id <= 0 then
+    vim.notify("[md-preview] バイナリの起動に失敗しました: " .. M.config.binary, vim.log.levels.ERROR)
+    state.job_id = nil
+    return false
+  end
+
+  state.chan_id = state.job_id
+  return true
+end
+
+--- プレビューを開始する（:MdPreview コマンドから呼び出す）
+function M.start()
+  local buf = vim.api.nvim_get_current_buf()
+  local filetype = vim.bo[buf].filetype
+
+  if filetype ~= "markdown" then
+    vim.notify("[md-preview] Markdown ファイルではありません (filetype: " .. filetype .. ")", vim.log.levels.WARN)
+    return
+  end
+
+  -- バイナリが存在しなければ自動ダウンロードを試みる
+  if vim.fn.executable(M.config.binary) == 0 then
+    vim.notify("[md-preview] バイナリが見つかりません。ダウンロードを試みます...", vim.log.levels.INFO)
+    if not M.install() then
+      vim.notify(
+        "[md-preview] 自動ダウンロード失敗。手動でインストールしてください:\n:MdPreviewInstall",
+        vim.log.levels.ERROR
+      )
+      return
+    end
+  end
+
+  if not start_binary() then return end
+
+  -- バッファを監視開始
+  -- バイナリ起動直後は RPC 接続が未確立のため、少し待ってから初回送信する
+  attach_buffer(buf)
+  vim.defer_fn(function()
+    -- 500ms 後に再送（バイナリ起動完了を待つ）
+    send_update(buf)
+  end, 500)
+
+  local url = string.format("http://127.0.0.1:%d", M.config.port)
+
+  if M.config.auto_open then
+    M._open_browser(url)
+  end
+
+  vim.notify("[md-preview] プレビュー開始: " .. url, vim.log.levels.INFO)
+end
+
+--- プレビューを停止する（:MdPreviewStop コマンドから呼び出す）
+function M.stop()
+  if state.job_id ~= nil then
+    vim.fn.jobstop(state.job_id)
+    state.job_id = nil
+    state.chan_id = nil
+  end
+  if state.buf_id ~= nil then
+    vim.api.nvim_buf_detach(state.buf_id)
+    state.buf_id = nil
+  end
+  vim.notify("[md-preview] プレビュー停止", vim.log.levels.INFO)
+end
+
+--- WSL 環境かどうかを検出する
+local function detect_wsl()
+  -- /proc/version に "microsoft" / "WSL" が含まれていれば WSL
+  local f = io.open("/proc/version", "r")
+  if not f then return false end
+  local content = f:read("*a"):lower()
+  f:close()
+  return content:find("microsoft") ~= nil or content:find("wsl") ~= nil
+end
+
+--- OS・環境に応じてブラウザを開く
+--- WSL の場合は Windows 側のブラウザを優先する
+function M._open_browser(url)
+  local cmd
+
+  if vim.fn.has("mac") == 1 then
+    -- macOS
+    cmd = { "open", url }
+
+  elseif detect_wsl() then
+    -- WSL: Windows 側のブラウザを優先
+    --   1. wslview (wslu パッケージ) — 最も確実
+    --   2. powershell.exe — WSL2 どこでも使える
+    --   3. cmd.exe /c start — フォールバック
+    --   4. xdg-open — WSL 内にブラウザがある場合の最終手段
+    if vim.fn.executable("wslview") == 1 then
+      cmd = { "wslview", url }
+    elseif vim.fn.executable("powershell.exe") == 1 then
+      -- PowerShell の Start-Process でデフォルトブラウザを開く
+      cmd = { "powershell.exe", "-NoProfile", "-Command",
+              string.format("Start-Process '%s'", url) }
+    elseif vim.fn.executable("cmd.exe") == 1 then
+      -- cmd.exe /c start "title" url  （空タイトルが必要）
+      cmd = { "cmd.exe", "/c", "start", '""', url }
+    else
+      cmd = { "xdg-open", url }
+    end
+
+  elseif vim.fn.has("unix") == 1 then
+    -- 通常の Linux
+    cmd = { "xdg-open", url }
+
+  else
+    -- Windows (WSL でない)
+    cmd = { "cmd.exe", "/c", "start", '""', url }
+  end
+
+  vim.fn.jobstart(cmd, { detach = true })
+end
+
+--- GitHub Releases から OS に合わせたバイナリをダウンロードする
+--- lazy.nvim の build オプションや :MdPreviewInstall コマンドから呼ぶ
+function M.install()
+  local uname    = vim.loop.os_uname()
+  local sysname  = uname.sysname  -- "Linux" / "Darwin" / "Windows_NT"
+  local machine  = uname.machine  -- "x86_64" / "arm64" / "aarch64"
+
+  -- プラットフォーム判定
+  local target
+  if sysname == "Linux" then
+    target = "x86_64-unknown-linux-gnu"
+  elseif sysname == "Darwin" then
+    target = (machine == "arm64" or machine == "aarch64")
+      and "aarch64-apple-darwin" or "x86_64-apple-darwin"
+  else
+    -- Windows / WSL
+    target = "x86_64-pc-windows-msvc"
+  end
+
+  local is_win  = sysname:match("Windows") ~= nil or vim.fn.has("win32") == 1
+  local ext     = is_win and ".exe" or ""
+  local repo    = "ywsrock/nvim-md-preview"
+  local fname   = "nvim-md-preview-" .. target .. ext
+  local url     = string.format(
+    "https://github.com/%s/releases/latest/download/%s", repo, fname)
+
+  local install_dir = vim.fn.stdpath("data") .. "/nvim-md-preview"
+  vim.fn.mkdir(install_dir, "p")
+  local binary = install_dir .. "/nvim-md-preview" .. ext
+
+  vim.notify("[md-preview] ダウンロード中...\n" .. url, vim.log.levels.INFO)
+
+  -- curl または wget を使ってダウンロード
+  local cmd
+  if vim.fn.executable("curl") == 1 then
+    cmd = string.format('curl -fsSL -o "%s" "%s"', binary, url)
+  elseif vim.fn.executable("wget") == 1 then
+    cmd = string.format('wget -q -O "%s" "%s"', binary, url)
+  else
+    vim.notify("[md-preview] curl または wget が必要です", vim.log.levels.ERROR)
+    return false
+  end
+
+  local result = vim.fn.system(cmd)
+  if vim.v.shell_error ~= 0 then
+    vim.notify("[md-preview] ダウンロード失敗:\n" .. (result or ""), vim.log.levels.ERROR)
+    return false
+  end
+
+  -- 実行権限を付与（Unix のみ）
+  if not is_win then
+    vim.fn.system('chmod +x "' .. binary .. '"')
+  end
+
+  M.config.binary = binary
+  vim.notify("[md-preview] インストール完了: " .. binary, vim.log.levels.INFO)
+  return true
+end
+
+--- セットアップ関数（lazy.nvim などから呼ぶ）
+function M.setup(opts)
+  M.config = vim.tbl_deep_extend("force", M.config, opts or {})
+  M._initialized = true
+end
+
+return M
