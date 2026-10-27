@@ -2,7 +2,7 @@
 
 All notable changes are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.4.1] - 2026-10-28
 
 ### Fixed
 - The v0.4.0 release is missing the Windows files, so `:MdPreviewInstall` fails on Windows with that version. Releases are now created as drafts and published only after every platform has uploaded its files.
