@@ -18,9 +18,10 @@ M.config = {
 }
 
 local state = {
-  job_id = nil,   -- Rust バイナリのジョブID
-  chan_id = nil,  -- RPC チャネルID
-  buf_id = nil,   -- 監視中のバッファ ID
+  job_id      = nil,  -- Rust バイナリのジョブID
+  chan_id      = nil,  -- RPC チャネルID
+  buf_id       = nil,  -- 監視中のバッファ ID
+  actual_port  = nil,  -- サーバーが実際に使用しているポート（ポート競合時に変わる）
 }
 
 --- バッファ全文を文字列として取得する
@@ -132,7 +133,11 @@ local function start_binary()
     on_stderr = function(_, data, _)
       for _, line in ipairs(data) do
         if line ~= "" then
-          vim.notify("[md-preview] " .. line, vim.log.levels.DEBUG)
+          -- READY:<port> でサーバーが使用しているポートを受け取る
+          local port_str = line:match("^READY:(%d+)$")
+          if port_str then
+            state.actual_port = tonumber(port_str)
+          end
         end
       end
     end,
@@ -173,20 +178,21 @@ function M.start()
   if not start_binary() then return end
 
   -- バッファを監視開始
-  -- バイナリ起動直後は RPC 接続が未確立のため、少し待ってから初回送信する
   attach_buffer(buf)
   vim.defer_fn(function()
-    -- 500ms 後に再送（バイナリ起動完了を待つ）
     send_update(buf)
   end, 500)
 
-  local url = string.format("http://127.0.0.1:%d", M.config.port)
-
-  if M.config.auto_open then
-    M._open_browser(url)
-  end
-
-  vim.notify("[md-preview] プレビュー開始: " .. url, vim.log.levels.INFO)
+  -- READY:<port> が届くまで少し待ってからブラウザを開く
+  -- ポート競合時は actual_port が変わっている
+  vim.defer_fn(function()
+    local port = state.actual_port or M.config.port
+    local url = string.format("http://127.0.0.1:%d", port)
+    if M.config.auto_open then
+      M._open_browser(url)
+    end
+    vim.notify("[md-preview] プレビュー開始: " .. url, vim.log.levels.INFO)
+  end, 300)
 end
 
 --- プレビューを停止する（:MdPreviewStop コマンドから呼び出す）

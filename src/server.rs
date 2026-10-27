@@ -78,29 +78,42 @@ impl AppState {
 }
 
 pub async fn start_server(port: u16, state: Arc<AppState>) {
+    let listener = find_listener(port).await;
+    let bound_port = listener.local_addr().unwrap().port();
+
     let app = Router::new()
         .route("/", get(preview_page))
         .route("/ws", get(ws_handler))
         .route("/assets", get(assets_handler))
-        // 埋め込みライブラリのルート
-        .route("/lib/highlight.min.js",     get(|| async { js_response(HLJS_JS) }))
-        .route("/lib/hljs-dark.min.css",    get(|| async { css_response(HLJS_DARK_CSS) }))
-        .route("/lib/hljs-light.min.css",   get(|| async { css_response(HLJS_LIGHT_CSS) }))
-        .route("/lib/mermaid.min.js",         get(|| async { js_response(MERMAID_JS) }))
-        .route("/lib/katex.min.js",         get(|| async { js_response(KATEX_JS) }))
-        .route("/lib/katex.min.css",        get(|| async { css_response(KATEX_CSS) }))
-        .route("/lib/auto-render.min.js",   get(|| async { js_response(AUTO_RENDER_JS) }))
-        .route("/lib/fonts/:name",          get(katex_font_handler))
+        .route("/lib/highlight.min.js",    get(|| async { js_response(HLJS_JS) }))
+        .route("/lib/hljs-dark.min.css",   get(|| async { css_response(HLJS_DARK_CSS) }))
+        .route("/lib/hljs-light.min.css",  get(|| async { css_response(HLJS_LIGHT_CSS) }))
+        .route("/lib/mermaid.min.js",      get(|| async { js_response(MERMAID_JS) }))
+        .route("/lib/katex.min.js",        get(|| async { js_response(KATEX_JS) }))
+        .route("/lib/katex.min.css",       get(|| async { css_response(KATEX_CSS) }))
+        .route("/lib/auto-render.min.js",  get(|| async { js_response(AUTO_RENDER_JS) }))
+        .route("/lib/fonts/:name",         get(katex_font_handler))
         .layer(CorsLayer::permissive())
         .with_state(state);
 
-    let addr = format!("127.0.0.1:{}", port);
-    let listener = tokio::net::TcpListener::bind(&addr)
-        .await
-        .expect("Failed to bind address");
-
-    eprintln!("[nvim-md-preview] Listening on http://{}", addr);
+    // 実際に使用するポートを stderr に出力（Lua の on_stderr で受け取る）
+    eprintln!("READY:{}", bound_port);
     axum::serve(listener, app).await.unwrap();
+}
+
+/// 指定ポートから順に空きポートを探す
+async fn find_listener(start_port: u16) -> tokio::net::TcpListener {
+    for port in start_port..start_port.saturating_add(10) {
+        let addr = format!("127.0.0.1:{}", port);
+        match tokio::net::TcpListener::bind(&addr).await {
+            Ok(l) => return l,
+            Err(_) => continue,
+        }
+    }
+    // 0 を指定するとOSが空きポートを自動割り当て
+    tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("Failed to bind any port")
 }
 
 fn js_response(data: &'static [u8]) -> impl IntoResponse {
