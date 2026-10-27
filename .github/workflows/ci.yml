@@ -54,5 +54,13 @@ jobs:
         with:
           neovim: true
 
+      # :MdPreviewInstall はプラグインの版の Release を取得するので、両方の版がずれないようにする
+      - name: Version check
+        run: |
+          CARGO=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
+          LUA=$(sed -n 's/^M.version = "\(.*\)"$/\1/p' lua/md_preview.lua)
+          echo "Cargo.toml: $CARGO, lua/md_preview.lua: $LUA"
+          [ -n "$CARGO" ] && [ "$CARGO" = "$LUA" ] || { echo "::error::Cargo.toml ($CARGO) and M.version in lua/md_preview.lua ($LUA) must match"; exit 1; }
+
       - name: Smoke test
         run: nvim --headless -u NONE -c "luafile tests/smoke.lua" -c "qa!"

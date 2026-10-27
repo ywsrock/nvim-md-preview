@@ -273,6 +273,11 @@ fn handle_scroll(state: &AppState, params: &[rmpv::Value]) {
 async fn main() {
     // 引数: <port> [host] [token]
     let args: Vec<String> = std::env::args().collect();
+    // プラグイン（Lua 側）がバイナリの版を確かめるのに使う
+    if args.get(1).map(String::as_str) == Some("--version") {
+        println!("nvim-md-preview {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
     let port: u16 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(DEFAULT_PORT);
     let host = args.get(2).cloned().unwrap_or_else(|| "127.0.0.1".to_string());
     let token = args.get(3).filter(|t| !t.is_empty()).cloned();

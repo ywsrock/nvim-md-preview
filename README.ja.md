@@ -56,7 +56,7 @@ use { "ywsrock/nvim-md-preview", run = ":MdPreviewInstall" }
 
 </details>
 
-`:MdPreviewInstall` は、バイナリと、エクスポート用の pandoc・Typst を並列でダウンロードし、進捗をコマンドラインに表示します。うまく動かないときは `:checkhealth md_preview` を実行してください。
+`:MdPreviewInstall` は、プラグインと同じ版のバイナリと、エクスポート用の pandoc・Typst を並列でダウンロードし、進捗をコマンドラインに表示します。`build` の設定をせずにプラグインを更新した場合は、バイナリが古いとプレビューの開始時に警告が出るので、もう一度 `:MdPreviewInstall` を実行してください。うまく動かないときは `:checkhealth md_preview` を実行してください。
 
 ## 他のプラグインとの比較
 

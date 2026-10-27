@@ -73,6 +73,15 @@ local function check_binary(config)
   local bin = config.binary
   if vim.fn.executable(bin) == 1 then
     h.ok(string.format("Binary: %s", bin))
+    local md = require("md_preview")
+    local v = md._binary_version(bin)
+    if v == md.version then
+      h.ok(string.format("Version: v%s (matches the plugin)", v))
+    else
+      h.warn(string.format("Version: %s, but the plugin is v%s", v and ("v" .. v) or "older than v0.5.0", md.version), {
+        "Run :MdPreviewInstall to download the binary for this plugin version",
+      })
+    end
   elseif vim.fn.filereadable(bin) == 1 then
     h.error(string.format("The binary is not executable: %s", bin), {
       "chmod +x " .. bin,

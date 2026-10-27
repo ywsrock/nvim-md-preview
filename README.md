@@ -56,7 +56,7 @@ use { "ywsrock/nvim-md-preview", run = ":MdPreviewInstall" }
 
 </details>
 
-`:MdPreviewInstall` downloads the binary (plus pandoc and Typst for export) in parallel with progress on the command line. Something wrong? Run `:checkhealth md_preview`.
+`:MdPreviewInstall` downloads the binary that matches the plugin version (plus pandoc and Typst for export) in parallel with progress on the command line. If you update the plugin without a `build` hook, the preview warns when the binary is out of date; run `:MdPreviewInstall` again. Something wrong? Run `:checkhealth md_preview`.
 
 ## How it compares
 

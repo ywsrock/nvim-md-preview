@@ -51,4 +51,12 @@ The server must stay safe to run while the user browses other sites. Do not add 
 
 ## Releases
 
-Releases are built by `.github/workflows/release.yml` when a `v*` tag is pushed. Use semantic versioning, bump `version` in `Cargo.toml`, move the "Unreleased" changelog entries under the new version, and push a new tag. Do not move an existing tag.
+Releases are built by `.github/workflows/release.yml` when a `v*` tag is pushed. Use semantic versioning and:
+
+1. Bump `version` in `Cargo.toml` and `M.version` in `lua/md_preview.lua` to the same value. CI fails if they differ, and the release fails if they do not match the tag.
+2. Move the "Unreleased" changelog entries under the new version. That section becomes the release notes.
+3. Merge, then push a new tag such as `v0.6.0`. Do not move an existing tag.
+
+The release is created as a draft and published only after every platform has uploaded its files.
+
+`:MdPreviewInstall` downloads the binary from the release that matches `M.version` (falling back to the latest release when that version has not been released yet), and the plugin warns when the installed binary's version differs.
