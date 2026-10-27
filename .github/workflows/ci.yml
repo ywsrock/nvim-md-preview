@@ -41,9 +41,8 @@ jobs:
       - name: Test
         run: cargo test --release
 
-      # 既存コードに clippy 警告が残っているため -D warnings は付けない（警告はログで確認する）
       - name: Clippy
-        run: cargo clippy
+        run: cargo clippy --release -- -D warnings
 
   lua:
     runs-on: ubuntu-latest

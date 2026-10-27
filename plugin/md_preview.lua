@@ -49,6 +49,21 @@ vim.api.nvim_create_user_command("MdPreviewStop", function()
   if m then m.stop() end
 end, { desc = "Markdown プレビューを停止" })
 
+vim.api.nvim_create_user_command("MdPreviewExport", function(opts)
+  local m = ensure_setup()
+  if m then m.export(opts.fargs[1], opts.fargs[2]) end
+end, {
+  nargs = "+",
+  desc = "プレビュー中の内容をエクスポート: :MdPreviewExport {pdf|docx|html|epub|markdown} [path]",
+  complete = function(arg_lead, cmdline)
+    -- 1 つ目の引数は形式、2 つ目はファイルパス
+    local argc = #vim.split(vim.trim(cmdline), "%s+") - (cmdline:match("%s$") and 0 or 1)
+    if argc >= 2 then return vim.fn.getcompletion(arg_lead, "file") end
+    return vim.tbl_filter(function(f) return f:find(arg_lead, 1, true) == 1 end,
+      require("md_preview").export_formats)
+  end,
+})
+
 vim.api.nvim_create_user_command("MdPreviewInstall", function()
   local ok, m = pcall(require, "md_preview")
   if ok then m.install() end
