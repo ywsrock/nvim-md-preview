@@ -2,7 +2,7 @@
 
 All notable changes are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.3.0] - 2026-10-28
 
 ### Added
 - Richer `:MdPreviewDiff`: word-level inline diff (character-level for Japanese), removed paragraphs and the previous version of code/tables/diagrams shown as collapsed boxes, change count with next/previous navigation, scrollbar markers, `+ ~ −` symbols and a legend so changes are clear without color.
