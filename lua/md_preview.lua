@@ -339,8 +339,14 @@ function M.install()
 
   local ok = M._download(url, binary)
   if not ok then
-    vim.notify("[md-preview] バイナリのダウンロードに失敗。ソースからビルドを試みます...", vim.log.levels.WARN)
-    if not M._build_from_source() then return false end
+    vim.notify(
+      "[md-preview] バイナリのダウンロードに失敗しました。\n"
+      .. "手動でダウンロードして配置してください:\n"
+      .. "  URL: " .. url .. "\n"
+      .. "  保存先: " .. binary,
+      vim.log.levels.ERROR
+    )
+    return false
   else
     if not is_win then vim.fn.system('chmod +x "' .. binary .. '"') end
     M.config.binary = binary
@@ -378,15 +384,24 @@ end
 function M._download(url, dest)
   local cmd
   if vim.fn.executable("curl") == 1 then
-    cmd = string.format('curl -fsSL -o "%s" "%s"', dest, url)
+    -- -L: リダイレクト追跡, -s: 非表示, --fail-with-body: エラー時失敗
+    -- Windows の curl も対応（-f の代わりに --fail-with-body または -s -S を使用）
+    cmd = string.format('curl -L -s -S -o "%s" "%s"', dest, url)
   elseif vim.fn.executable("wget") == 1 then
     cmd = string.format('wget -q -O "%s" "%s"', dest, url)
+  elseif vim.fn.has("win32") == 1 then
+    -- PowerShell でのダウンロード（curl も wget もない場合のフォールバック）
+    cmd = string.format(
+      'powershell -NoProfile -Command "Invoke-WebRequest -Uri \'%s\' -OutFile \'%s\' -UseBasicParsing"',
+      url, dest
+    )
   else
     vim.notify("[md-preview] curl または wget が必要です", vim.log.levels.ERROR)
     return false
   end
   vim.fn.system(cmd)
-  return vim.v.shell_error == 0
+  -- ダウンロードされたファイルが存在し、0 バイトでないことを確認
+  return vim.v.shell_error == 0 and vim.fn.getfsize(dest) > 0
 end
 
 --- pandoc をインストール
