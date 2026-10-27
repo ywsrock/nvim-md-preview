@@ -9,7 +9,28 @@ permissions:
   contents: write
 
 jobs:
+  # pandoc / typst のバージョンを一度だけ解決し、全プラットフォームで同じものを同梱する
+  versions:
+    runs-on: ubuntu-latest
+    outputs:
+      pandoc: ${{ steps.resolve.outputs.pandoc }}
+      typst: ${{ steps.resolve.outputs.typst }}
+    steps:
+      - id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          PANDOC=$(gh api repos/jgm/pandoc/releases/latest --jq .tag_name)
+          TYPST=$(gh api repos/typst/typst/releases/latest --jq .tag_name)
+          [ -n "$PANDOC" ] || { echo "::error::failed to resolve pandoc version"; exit 1; }
+          [ -n "$TYPST" ]  || { echo "::error::failed to resolve typst version"; exit 1; }
+          echo "pandoc=$PANDOC" >> "$GITHUB_OUTPUT"
+          echo "typst=$TYPST"   >> "$GITHUB_OUTPUT"
+          echo "pandoc $PANDOC / typst $TYPST"
+
   build:
+    needs: versions
     strategy:
       fail-fast: false
       matrix:
@@ -18,28 +39,36 @@ jobs:
             target: x86_64-unknown-linux-gnu
             artifact: nvim-md-preview
             pandoc_bin: pandoc-linux
-            typst_url: https://github.com/typst/typst/releases/latest/download/typst-x86_64-unknown-linux-musl.tar.xz
+            pandoc_asset: linux-amd64.tar.gz
+            typst_asset: typst-x86_64-unknown-linux-musl.tar.xz
             typst_bin: typst-linux
-          - os: macos-13
+          - os: macos-latest
             target: x86_64-apple-darwin
             artifact: nvim-md-preview
             pandoc_bin: pandoc-macos-x86_64
-            typst_url: https://github.com/typst/typst/releases/latest/download/typst-x86_64-apple-darwin.tar.xz
+            pandoc_asset: x86_64-macOS.zip
+            typst_asset: typst-x86_64-apple-darwin.tar.xz
             typst_bin: typst-macos-x86_64
           - os: macos-latest
             target: aarch64-apple-darwin
             artifact: nvim-md-preview
             pandoc_bin: pandoc-macos-arm64
-            typst_url: https://github.com/typst/typst/releases/latest/download/typst-aarch64-apple-darwin.tar.xz
+            pandoc_asset: arm64-macOS.zip
+            typst_asset: typst-aarch64-apple-darwin.tar.xz
             typst_bin: typst-macos-arm64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact: nvim-md-preview.exe
             pandoc_bin: pandoc-windows.exe
-            typst_url: https://github.com/typst/typst/releases/latest/download/typst-x86_64-pc-windows-msvc.zip
+            pandoc_asset: windows-x86_64.zip
+            typst_asset: typst-x86_64-pc-windows-msvc.zip
             typst_bin: typst-windows.exe
 
     runs-on: ${{ matrix.os }}
+
+    env:
+      PANDOC_VERSION: ${{ needs.versions.outputs.pandoc }}
+      TYPST_VERSION: ${{ needs.versions.outputs.typst }}
 
     steps:
       - uses: actions/checkout@v4
@@ -110,73 +139,61 @@ jobs:
 
       # ── pandoc を取得してシングルバイナリとしてリリースに含める ──
 
-      - name: Extract pandoc (Linux)
-        if: runner.os == 'Linux'
+      - name: Extract pandoc (Unix)
+        if: runner.os != 'Windows'
         run: |
-          VER=$(curl -sL https://api.github.com/repos/jgm/pandoc/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
-          curl -fsSL -o pandoc.tar.gz "https://github.com/jgm/pandoc/releases/download/${VER}/pandoc-${VER}-linux-amd64.tar.gz"
-          tar -xzf pandoc.tar.gz --wildcards "*/bin/pandoc" --strip-components=2
-          mv pandoc ${{ matrix.pandoc_bin }}
+          set -euo pipefail
+          ASSET="pandoc-${PANDOC_VERSION}-${{ matrix.pandoc_asset }}"
+          curl -fsSL --retry 3 -o "$ASSET" "https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/${ASSET}"
+          mkdir pandoc_tmp
+          case "$ASSET" in
+            *.tar.gz) tar -xzf "$ASSET" -C pandoc_tmp ;;
+            *.zip)    unzip -q "$ASSET" -d pandoc_tmp ;;
+          esac
+          FOUND=$(find pandoc_tmp -type f -path '*/bin/pandoc')
+          [ "$(printf '%s\n' "$FOUND" | grep -c .)" -eq 1 ] || { echo "::error::expected exactly one bin/pandoc, got: $FOUND"; exit 1; }
+          mv "$FOUND" ${{ matrix.pandoc_bin }}
           chmod +x ${{ matrix.pandoc_bin }}
-
-      - name: Extract pandoc (macOS x86_64)
-        if: matrix.target == 'x86_64-apple-darwin'
-        run: |
-          VER=$(curl -sL https://api.github.com/repos/jgm/pandoc/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
-          URL="https://github.com/jgm/pandoc/releases/download/${VER}/pandoc-${VER}-x86_64-macOS.zip"
-          curl -L --retry 3 -o pandoc.zip "$URL"
-          unzip -jo pandoc.zip "*/bin/pandoc" -d .
-          mv pandoc ${{ matrix.pandoc_bin }}
-          chmod +x ${{ matrix.pandoc_bin }}
-
-      - name: Extract pandoc (macOS arm64)
-        if: matrix.target == 'aarch64-apple-darwin'
-        run: |
-          VER=$(curl -sL https://api.github.com/repos/jgm/pandoc/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
-          URL="https://github.com/jgm/pandoc/releases/download/${VER}/pandoc-${VER}-arm64-macOS.zip"
-          curl -L --retry 3 -o pandoc.zip "$URL"
-          unzip -jo pandoc.zip "*/bin/pandoc" -d .
-          mv pandoc ${{ matrix.pandoc_bin }}
-          chmod +x ${{ matrix.pandoc_bin }}
+          rm -rf pandoc_tmp "$ASSET"
 
       - name: Extract pandoc (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $ver = (Invoke-WebRequest -Uri "https://api.github.com/repos/jgm/pandoc/releases/latest" -UseBasicParsing).Content | ConvertFrom-Json | Select-Object -ExpandProperty tag_name
-          $url = "https://github.com/jgm/pandoc/releases/download/$ver/pandoc-$ver-windows-x86_64.zip"
-          Invoke-WebRequest -Uri $url -OutFile pandoc.zip -UseBasicParsing
+          $ErrorActionPreference = 'Stop'
+          $asset = "pandoc-$env:PANDOC_VERSION-${{ matrix.pandoc_asset }}"
+          Invoke-WebRequest -Uri "https://github.com/jgm/pandoc/releases/download/$env:PANDOC_VERSION/$asset" -OutFile pandoc.zip -UseBasicParsing -MaximumRetryCount 3
           Expand-Archive -Path pandoc.zip -DestinationPath pandoc_tmp -Force
-          $src = Get-ChildItem -Path pandoc_tmp -Filter "pandoc.exe" -Recurse | Select-Object -First 1
-          Copy-Item $src.FullName -Destination "${{ matrix.pandoc_bin }}"
+          $src = @(Get-ChildItem -Path pandoc_tmp -Filter "pandoc.exe" -Recurse)
+          if ($src.Count -ne 1) { throw "expected exactly one pandoc.exe, got $($src.Count)" }
+          Copy-Item $src[0].FullName -Destination "${{ matrix.pandoc_bin }}"
           Remove-Item -Recurse -Force pandoc_tmp, pandoc.zip
 
       # ── Typst を取得してシングルバイナリとしてリリースに含める ──
 
-      - name: Extract typst (Linux)
-        if: runner.os == 'Linux'
+      - name: Extract typst (Unix)
+        if: runner.os != 'Windows'
         run: |
-          curl -fsSL -o typst.tar.xz "${{ matrix.typst_url }}"
-          tar -xJf typst.tar.xz --strip-components=1 --wildcards "*/typst"
-          mv typst ${{ matrix.typst_bin }}
+          set -euo pipefail
+          curl -fsSL --retry 3 -o typst.tar.xz "https://github.com/typst/typst/releases/download/${TYPST_VERSION}/${{ matrix.typst_asset }}"
+          mkdir typst_tmp
+          tar -xJf typst.tar.xz -C typst_tmp
+          FOUND=$(find typst_tmp -type f -name typst)
+          [ "$(printf '%s\n' "$FOUND" | grep -c .)" -eq 1 ] || { echo "::error::expected exactly one typst binary, got: $FOUND"; exit 1; }
+          mv "$FOUND" ${{ matrix.typst_bin }}
           chmod +x ${{ matrix.typst_bin }}
-
-      - name: Extract typst (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          curl -fsSL -o typst.tar.xz "${{ matrix.typst_url }}"
-          tar -xJf typst.tar.xz --strip-components=1 --wildcards "*/typst"
-          mv typst ${{ matrix.typst_bin }}
-          chmod +x ${{ matrix.typst_bin }}
+          rm -rf typst_tmp typst.tar.xz
 
       - name: Extract typst (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          Invoke-WebRequest -Uri "${{ matrix.typst_url }}" -OutFile typst.zip -UseBasicParsing
+          $ErrorActionPreference = 'Stop'
+          Invoke-WebRequest -Uri "https://github.com/typst/typst/releases/download/$env:TYPST_VERSION/${{ matrix.typst_asset }}" -OutFile typst.zip -UseBasicParsing -MaximumRetryCount 3
           Expand-Archive -Path typst.zip -DestinationPath typst_tmp -Force
-          $src = Get-ChildItem -Path typst_tmp -Filter "typst.exe" -Recurse | Select-Object -First 1
-          Copy-Item $src.FullName -Destination "${{ matrix.typst_bin }}"
+          $src = @(Get-ChildItem -Path typst_tmp -Filter "typst.exe" -Recurse)
+          if ($src.Count -ne 1) { throw "expected exactly one typst.exe, got $($src.Count)" }
+          Copy-Item $src[0].FullName -Destination "${{ matrix.typst_bin }}"
           Remove-Item -Recurse -Force typst_tmp, typst.zip
 
       # ── リリースにアップロード ──
