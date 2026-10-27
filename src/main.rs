@@ -208,7 +208,7 @@ async fn handle_export(state: &AppState, params: &[rmpv::Value]) {
 /// `md_preview_diff` 処理 — Git の差分を受け取ってブラウザに送る
 /// params: [hunks, info]
 ///   hunks = [[s, e, kind, old_md, ctx_s, ctx_e], ...]（kind: "add" | "mod" | "del"）
-///   info  = { enabled, base, available, colors = { add, mod, del } }
+///   info  = { enabled, base, available, in_repo, colors = { add, mod, del } }
 /// 変更前の Markdown（old_md）はここで HTML にしてから送る
 async fn handle_diff(state: &AppState, params: &[rmpv::Value]) {
     let num = |v: Option<&rmpv::Value>| v.and_then(|v| v.as_u64().or_else(|| v.as_i64().map(|n| n.max(0) as u64)));
@@ -241,6 +241,7 @@ async fn handle_diff(state: &AppState, params: &[rmpv::Value]) {
         "type": "diff",
         "enabled": get("enabled").and_then(|v| v.as_bool()).unwrap_or(!hunks.is_empty()),
         "available": get("available").and_then(|v| v.as_bool()).unwrap_or(true),
+        "in_repo": get("in_repo").and_then(|v| v.as_bool()).unwrap_or(true),
         "base": get("base").and_then(|v| v.as_str().map(str::to_string)).unwrap_or_else(|| "HEAD".into()),
         "colors": { "add": color("add"), "mod": color("mod"), "del": color("del") },
         "hunks": hunks,

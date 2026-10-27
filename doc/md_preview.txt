@@ -122,8 +122,8 @@ Call `require("md_preview").setup(opts)`. All keys are optional; defaults:
         toolbar buttons keep working.
 
     git_diff                                          *md-preview-git_diff*
-        `false`. Show Git changes in the preview. Toggle with
-        |:MdPreviewDiff|.
+        `true`. Show Git changes in the preview. Toggle with
+        |:MdPreviewDiff|. Files outside a Git repository show nothing.
 
     git_diff_base                                *md-preview-git_diff_base*
         `"HEAD"`. What to compare against: `"HEAD"`, `"staged"` (the index),

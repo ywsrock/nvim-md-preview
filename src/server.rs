@@ -2145,7 +2145,8 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
     function applyDiff() {
       clearDiff();
       const nav = $('diffNav');
-      if (!diffState.enabled) { nav.hidden = true; return; }
+      // 差分の表示がオフ、または Git の管理外のファイルなら何も出さない
+      if (!diffState.enabled || diffState.in_repo === false) { nav.hidden = true; return; }
       nav.hidden = false;
       const base = diffState.base || 'HEAD';
       const hunks = diffState.hunks || [];
