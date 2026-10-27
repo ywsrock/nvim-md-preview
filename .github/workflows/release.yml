@@ -196,6 +196,23 @@ jobs:
           Copy-Item $src[0].FullName -Destination "${{ matrix.typst_bin }}"
           Remove-Item -Recurse -Force typst_tmp, typst.zip
 
+      # ── :MdPreviewInstall のダウンロード量を減らすため tar.gz 版も作る ──
+      # 中身は pandoc / typst（Windows は .exe 付き）1 ファイルのみ。展開先にそのまま置ける
+
+      - name: Package pandoc / typst as tar.gz
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXE=""; [ "$RUNNER_OS" = "Windows" ] && EXE=".exe"
+          for pair in "pandoc:${{ matrix.pandoc_bin }}" "typst:${{ matrix.typst_bin }}"; do
+            TOOL="${pair%%:*}"; BIN="${pair#*:}"
+            mkdir -p "pkg_$TOOL"
+            cp "$BIN" "pkg_$TOOL/$TOOL$EXE"
+            tar -cf - -C "pkg_$TOOL" "$TOOL$EXE" | gzip -9 > "${BIN%.exe}.tar.gz"
+            rm -rf "pkg_$TOOL"
+            ls -l "$BIN" "${BIN%.exe}.tar.gz"
+          done
+
       # ── リリースにアップロード ──
 
       - name: Rename nvim-md-preview (Unix)
@@ -214,5 +231,7 @@ jobs:
             nvim-md-preview-${{ matrix.target }}*
             ${{ matrix.pandoc_bin }}
             ${{ matrix.typst_bin }}
+            pandoc-*.tar.gz
+            typst-*.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

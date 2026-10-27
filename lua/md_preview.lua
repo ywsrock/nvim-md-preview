@@ -209,16 +209,23 @@ function M.start()
     return
   end
 
-  -- バイナリが存在しなければ自動ダウンロードを試みる
+  -- バイナリが存在しなければ自動ダウンロードし、完了後にプレビューを開始する
   if vim.fn.executable(M.config.binary) == 0 then
-    vim.notify("[md-preview] バイナリが見つかりません。ダウンロードを試みます...", vim.log.levels.INFO)
-    if not M.install() then
-      vim.notify(
-        "[md-preview] 自動ダウンロード失敗。手動でインストールしてください:\n:MdPreviewInstall",
-        vim.log.levels.ERROR
-      )
-      return
-    end
+    vim.notify("[md-preview] バイナリが見つかりません。ダウンロードを開始します...", vim.log.levels.INFO)
+    M.install({
+      missing_only = true,
+      on_done = function(ok)
+        if not ok then
+          vim.notify(
+            "[md-preview] 自動ダウンロード失敗。手動でインストールしてください:\n:MdPreviewInstall",
+            vim.log.levels.ERROR
+          )
+        elseif vim.api.nvim_buf_is_valid(buf) then
+          vim.api.nvim_buf_call(buf, M.start)
+        end
+      end,
+    })
+    return
   end
 
   if not start_binary() then return end
@@ -310,141 +317,251 @@ function M._open_browser(url)
   vim.fn.jobstart(cmd, { detach = true })
 end
 
---- GitHub Releases から OS に合わせたバイナリをダウンロードする
+local uv = vim.uv or vim.loop
+
+local RELEASE_BASE = "https://github.com/ywsrock/nvim-md-preview/releases/latest/download/"
+
+--- ダウンロードコマンドを組み立てる（curl → wget → PowerShell の順で使えるものを選ぶ）
+local function download_cmd(url, dest)
+  if vim.fn.executable("curl") == 1 then
+    -- -f: HTTP エラー時は失敗扱い, --progress-bar: stderr に進捗（%）を出す
+    return { "curl", "-fL", "--retry", "3", "--progress-bar", "-o", dest, url }
+  elseif vim.fn.executable("wget") == 1 then
+    return { "wget", "-q", "-O", dest, url }
+  elseif vim.fn.has("win32") == 1 then
+    -- 進捗表示を切ると Invoke-WebRequest が大幅に速くなる
+    return { "powershell", "-NoProfile", "-Command", string.format(
+      "$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%s' -OutFile '%s' -UseBasicParsing",
+      url, dest) }
+  end
+  return nil
+end
+
+--- 非同期ダウンロード。item.pct に進捗を書き込み、完了時に on_done(ok, err) を呼ぶ
+local function download_async(item, url, dest, on_done)
+  local cmd = download_cmd(url, dest)
+  if not cmd then
+    return on_done(false, "curl / wget / PowerShell のいずれかが必要です")
+  end
+  item.tmp, item.pct = dest, nil
+  local last_err, tail = "", ""
+  local job = vim.fn.jobstart(cmd, {
+    on_stderr = function(_, data)
+      -- stderr は任意の位置で分割されて届くので、末尾をつなげてから最後の "NN.N%" を拾う
+      tail = (tail .. table.concat(data, "\n")):sub(-200)
+      local pct
+      for p in tail:gmatch("(%d+%.?%d*)%%") do pct = tonumber(p) end
+      if pct then item.pct = pct end
+      for _, line in ipairs(data) do
+        if line:match("^curl:") or (line:match("%S") and not line:match("[#%%]")) then
+          last_err = vim.trim(line)
+        end
+      end
+    end,
+    on_exit = function(_, code)
+      item.tmp = nil
+      local ok = code == 0 and vim.fn.getfsize(dest) > 0
+      if not ok then os.remove(dest) end
+      on_done(ok, not ok and (last_err ~= "" and last_err or ("exit " .. code)) or nil)
+    end,
+  })
+  if job <= 0 then
+    on_done(false, "ダウンロードプロセスを起動できません: " .. cmd[1])
+  end
+end
+
+--- tar.gz を dir に展開する（Windows 10 以降は tar.exe が標準搭載）
+local function extract_async(archive, dir, on_done)
+  -- cwd を展開先にして相対パスで渡す（GNU tar が "C:\..." をリモートホストと解釈するのを避ける）
+  local job = vim.fn.jobstart({ "tar", "-xzf", vim.fn.fnamemodify(archive, ":t") }, {
+    cwd = dir,
+    on_exit = function(_, code) on_done(code == 0) end,
+  })
+  if job <= 0 then on_done(false) end
+end
+
+--- 実行権限を付けて実行可能か確認する
+local function finalize(path, is_win)
+  if not is_win then uv.fs_chmod(path, 493) end  -- 0755
+  return vim.fn.executable(path) == 1
+end
+
+--- 1 項目をインストールする
+--- item.asset の .tar.gz を優先し、無ければ（または tar が無ければ）非圧縮版を取得する
+local function install_item(item, install_dir, is_win, on_done)
+  local function fail(err)
+    item.status, item.err = "fail", err
+    on_done()
+  end
+  local function succeed()
+    if finalize(item.dest, is_win) then
+      item.status = "done"
+      on_done()
+    else
+      fail("実行できません: " .. item.dest)
+    end
+  end
+
+  local function fetch_raw()
+    local tmp = item.dest .. ".download"
+    download_async(item, RELEASE_BASE .. item.asset, tmp, function(ok, err)
+      if not ok then return fail(err) end
+      local renamed, rename_err = uv.fs_rename(tmp, item.dest)
+      if not renamed then
+        os.remove(tmp)
+        return fail(rename_err)
+      end
+      succeed()
+    end)
+  end
+
+  if not item.archive or vim.fn.executable("tar") == 0 then
+    return fetch_raw()
+  end
+
+  local archive = install_dir .. "/" .. item.asset .. ".tar.gz"
+  download_async(item, RELEASE_BASE .. item.asset .. ".tar.gz", archive, function(ok)
+    -- 古いリリースには .tar.gz が無いので非圧縮版にフォールバック
+    if not ok then return fetch_raw() end
+    item.status = "extract"
+    extract_async(archive, install_dir, function(extracted)
+      os.remove(archive)
+      if extracted then succeed() else fetch_raw() end
+    end)
+  end)
+end
+
+--- 進捗をコマンドラインに 1 行で表示する（ASCII のみ：表示幅を超えると Hit-Enter が出るため）
+local function render_progress(items)
+  local parts = {}
+  for _, it in ipairs(items) do
+    local s
+    if it.status == "done" then
+      s = "done"
+    elseif it.status == "fail" then
+      s = "FAILED"
+    elseif it.status == "extract" then
+      s = "extracting"
+    elseif it.pct then
+      s = string.format("%d%%", it.pct)
+    else
+      local size = it.tmp and vim.fn.getfsize(it.tmp) or -1
+      s = size > 0 and string.format("%.1fMB", size / 1048576) or "..."
+    end
+    parts[#parts + 1] = it.label .. " " .. s
+  end
+  local msg = "[md-preview] installing: " .. table.concat(parts, " | ")
+  vim.api.nvim_echo({ { msg:sub(1, math.max(vim.v.echospace - 1, 1)) } }, false, {})
+end
+
+--- GitHub Releases から OS に合わせたバイナリを並列ダウンロードする
 --- lazy.nvim の build オプションや :MdPreviewInstall コマンドから呼ぶ
-function M.install()
-  local uname    = vim.loop.os_uname()
-  local sysname  = uname.sysname  -- "Linux" / "Darwin" / "Windows_NT"
-  local machine  = uname.machine  -- "x86_64" / "arm64" / "aarch64"
+--- opts.missing_only: 既にあるものはスキップ / opts.on_done(ok): 完了時コールバック
+--- UI が無い（headless）場合は完了まで待って ok を返す
+function M.install(opts)
+  opts = opts or {}
+  if M._installing then
+    vim.notify("[md-preview] インストール実行中です", vim.log.levels.WARN)
+    return false
+  end
+
+  local uname   = uv.os_uname()
+  local sysname = uname.sysname  -- "Linux" / "Darwin" / "Windows_NT"
+  local machine = uname.machine  -- "x86_64" / "arm64" / "aarch64"
+  local is_arm  = machine == "arm64" or machine == "aarch64"
 
   local is_win = sysname:match("Windows") ~= nil or vim.fn.has("win32") == 1
   local ext    = is_win and ".exe" or ""
   local install_dir = vim.fn.stdpath("data") .. "/nvim-md-preview"
   vim.fn.mkdir(install_dir, "p")
 
-  -- ── 1. nvim-md-preview バイナリ ──────────────────────────────
-  local target
+  local target, plat
   if sysname == "Linux" then
-    target = "x86_64-unknown-linux-gnu"
+    target, plat = "x86_64-unknown-linux-gnu", "linux"
   elseif sysname == "Darwin" then
-    target = (machine == "arm64" or machine == "aarch64")
-      and "aarch64-apple-darwin" or "x86_64-apple-darwin"
+    target = is_arm and "aarch64-apple-darwin" or "x86_64-apple-darwin"
+    plat   = is_arm and "macos-arm64" or "macos-x86_64"
   else
-    target = "x86_64-pc-windows-msvc"
+    target, plat = "x86_64-pc-windows-msvc", "windows"
   end
 
-  local fname  = "nvim-md-preview-" .. target .. ext
-  local url    = string.format("https://github.com/ywsrock/nvim-md-preview/releases/latest/download/%s", fname)
-  local binary = install_dir .. "/nvim-md-preview" .. ext
-
-  local ok = M._download(url, binary)
-  if not ok then
-    vim.notify(
-      "[md-preview] バイナリのダウンロードに失敗しました。\n"
-      .. "手動でダウンロードして配置してください:\n"
-      .. "  URL: " .. url .. "\n"
-      .. "  保存先: " .. binary,
-      vim.log.levels.ERROR
-    )
-    return false
-  else
-    if not is_win then vim.fn.system('chmod +x "' .. binary .. '"') end
-    M.config.binary = binary
-    vim.notify("[md-preview] ✅ nvim-md-preview: " .. binary, vim.log.levels.INFO)
-  end
-
-  -- ── 2. pandoc（DOCX/HTML/EPUB 用） ───────────────────────────
   local cfg = M.config.export
+  local items = {
+    { label = "core", name = "nvim-md-preview", asset = "nvim-md-preview-" .. target .. ext,
+      dest = install_dir .. "/nvim-md-preview" .. ext },
+  }
   if cfg.docx_engine == "pandoc" then
-    vim.notify("[md-preview] pandoc をダウンロード中...", vim.log.levels.INFO)
-    local pandoc_ok = M._install_pandoc(install_dir, sysname, machine, is_win, ext)
-    if pandoc_ok then
-      vim.notify("[md-preview] ✅ pandoc インストール完了", vim.log.levels.INFO)
-    else
-      vim.notify("[md-preview] ⚠️  pandoc のダウンロードに失敗しました。手動でインストールしてください。", vim.log.levels.WARN)
-    end
+    items[#items + 1] = { label = "pandoc", name = "pandoc", asset = "pandoc-" .. plat .. ext,
+      dest = install_dir .. "/pandoc" .. ext, archive = true }
   end
-
-  -- ── 3. Typst（PDF 用） ────────────────────────────────────────
   if cfg.pdf_engine == "typst" then
-    vim.notify("[md-preview] Typst をダウンロード中...", vim.log.levels.INFO)
-    local typst_ok = M._install_typst(install_dir, sysname, machine, is_win, ext)
-    if typst_ok then
-      vim.notify("[md-preview] ✅ Typst インストール完了", vim.log.levels.INFO)
+    items[#items + 1] = { label = "typst", name = "Typst", asset = "typst-" .. plat .. ext,
+      dest = install_dir .. "/typst" .. ext, archive = true }
+  end
+  for _, it in ipairs(items) do
+    -- .tar.gz のアセット名には .exe を付けない（pandoc-windows.tar.gz）
+    if it.archive then it.asset = it.asset:gsub("%.exe$", "") end
+    if opts.missing_only and vim.fn.executable(it.dest) == 1 then it.status = "done" end
+  end
+
+  M._installing = true
+  local timer = uv.new_timer()
+  timer:start(0, 200, vim.schedule_wrap(function() render_progress(items) end))
+
+  local finished, result = false, false
+  local function on_all_done()
+    timer:stop()
+    timer:close()
+    M._installing = false
+
+    local core = items[1]
+    local lines, level = {}, vim.log.levels.INFO
+    for _, it in ipairs(items) do
+      if it.status == "done" then
+        lines[#lines + 1] = "✅ " .. it.name .. ": " .. it.dest
+      else
+        lines[#lines + 1] = "❌ " .. it.name .. ": " .. (it.err or "unknown error")
+          .. "\n   URL: " .. RELEASE_BASE .. it.asset
+        level = vim.log.levels.WARN
+      end
+    end
+    result = core.status == "done"
+    if result then
+      M.config.binary = core.dest
     else
-      vim.notify("[md-preview] ⚠️  Typst のダウンロードに失敗しました。PDF はブラウザ印刷を使用します。", vim.log.levels.WARN)
+      level = vim.log.levels.ERROR
+    end
+    vim.api.nvim_echo({ { "" } }, false, {})
+    vim.notify("[md-preview] インストール" .. (level == vim.log.levels.INFO and "完了" or "結果")
+      .. "\n" .. table.concat(lines, "\n"), level)
+    finished = true
+    if opts.on_done then opts.on_done(result) end
+  end
+
+  local pending = 0
+  for _, it in ipairs(items) do
+    if it.status ~= "done" then pending = pending + 1 end
+  end
+  if pending == 0 then
+    on_all_done()
+  else
+    for _, it in ipairs(items) do
+      if it.status ~= "done" then
+        install_item(it, install_dir, is_win, function()
+          pending = pending - 1
+          if pending == 0 then on_all_done() end
+        end)
+      end
     end
   end
 
-  vim.notify("[md-preview] インストール完了！", vim.log.levels.INFO)
+  if #vim.api.nvim_list_uis() == 0 then
+    vim.wait(30 * 60 * 1000, function() return finished end, 200)
+    return result
+  end
   return true
 end
 
---- ファイルをダウンロードするヘルパー
-function M._download(url, dest)
-  local cmd
-  if vim.fn.executable("curl") == 1 then
-    -- -L: リダイレクト追跡, -s: 非表示, --fail-with-body: エラー時失敗
-    -- Windows の curl も対応（-f の代わりに --fail-with-body または -s -S を使用）
-    cmd = string.format('curl -L -s -S -o "%s" "%s"', dest, url)
-  elseif vim.fn.executable("wget") == 1 then
-    cmd = string.format('wget -q -O "%s" "%s"', dest, url)
-  elseif vim.fn.has("win32") == 1 then
-    -- PowerShell でのダウンロード（curl も wget もない場合のフォールバック）
-    cmd = string.format(
-      'powershell -NoProfile -Command "Invoke-WebRequest -Uri \'%s\' -OutFile \'%s\' -UseBasicParsing"',
-      url, dest
-    )
-  else
-    vim.notify("[md-preview] curl または wget が必要です", vim.log.levels.ERROR)
-    return false
-  end
-  vim.fn.system(cmd)
-  -- ダウンロードされたファイルが存在し、0 バイトでないことを確認
-  return vim.v.shell_error == 0 and vim.fn.getfsize(dest) > 0
-end
-
---- pandoc をインストール（nvim-md-preview Releases から取得・解凍不要）
-function M._install_pandoc(install_dir, sysname, machine, is_win, ext)
-  local fname
-  if sysname == "Linux" then
-    fname = "pandoc-linux"
-  elseif sysname == "Darwin" then
-    fname = (machine == "arm64" or machine == "aarch64")
-      and "pandoc-macos-arm64" or "pandoc-macos-x86_64"
-  else
-    fname = "pandoc-windows.exe"
-  end
-
-  local url    = string.format("https://github.com/ywsrock/nvim-md-preview/releases/latest/download/%s", fname)
-  local pandoc = install_dir .. "/pandoc" .. ext
-
-  if not M._download(url, pandoc) then return false end
-  if not is_win then vim.fn.system('chmod +x "' .. pandoc .. '"') end
-  return vim.fn.executable(pandoc) == 1
-end
-
---- Typst をインストール（nvim-md-preview Releases から取得・解凍不要）
-function M._install_typst(install_dir, sysname, machine, is_win, ext)
-  local fname
-  if sysname == "Linux" then
-    fname = "typst-linux"
-  elseif sysname == "Darwin" then
-    fname = (machine == "arm64" or machine == "aarch64")
-      and "typst-macos-arm64" or "typst-macos-x86_64"
-  else
-    fname = "typst-windows.exe"
-  end
-
-  local url   = string.format("https://github.com/ywsrock/nvim-md-preview/releases/latest/download/%s", fname)
-  local typst = install_dir .. "/typst" .. ext
-
-  if not M._download(url, typst) then return false end
-  if not is_win then vim.fn.system('chmod +x "' .. typst .. '"') end
-  return vim.fn.executable(typst) == 1
-end
-
---- cargo を使ってソースからビルドする（リリースバイナリがない場合のフォールバック）
 --- セットアップ関数（lazy.nvim などから呼ぶ）
 function M.setup(opts)
   M.config = vim.tbl_deep_extend("force", M.config, opts or {})
