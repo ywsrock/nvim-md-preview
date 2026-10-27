@@ -168,6 +168,10 @@ it again to print.
 PDF uses Typst, DOCX / HTML / EPUB use pandoc. Both are downloaded by
 |:MdPreviewInstall|. Options under `export`:
 
+    formats         `{ "pdf", "docx", "html", "epub", "markdown" }`. Formats
+                    offered in the preview's Export menu and in
+                    |:MdPreviewExport| completion. `{}` hides the Export
+                    button.
     pdf_engine      `"typst"`. Any other value skips downloading Typst.
     docx_engine     `"pandoc"`. Any other value skips downloading pandoc.
     pandoc_path     `""`. Empty: downloaded copy, then `pandoc` on PATH.

@@ -60,7 +60,7 @@ end, {
     local argc = #vim.split(vim.trim(cmdline), "%s+") - (cmdline:match("%s$") and 0 or 1)
     if argc >= 2 then return vim.fn.getcompletion(arg_lead, "file") end
     return vim.tbl_filter(function(f) return f:find(arg_lead, 1, true) == 1 end,
-      require("md_preview").export_formats)
+      require("md_preview").config.export.formats or require("md_preview").export_formats)
   end,
 })
 

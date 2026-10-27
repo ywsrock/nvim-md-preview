@@ -160,6 +160,10 @@ async fn handle_config(state: &AppState, params: &[rmpv::Value]) {
 
     state.render_opts.write().await.wiki_links = get_bool(opts, "wiki_links").unwrap_or(false);
     *state.browser_keys.write().await = get_bool(opts, "browser_keys").unwrap_or(true);
+    if let Some(formats) = get(opts, "export_formats").and_then(|v| v.as_array().cloned()) {
+        *state.export_formats.write().await =
+            formats.iter().filter_map(|f| f.as_str().map(str::to_string)).collect();
+    }
     *state.theme.write().await = get_str(opts, "theme").unwrap_or_else(|| "auto".to_string());
     *state.custom_css.write().await = get_str(opts, "custom_css").unwrap_or_default();
 

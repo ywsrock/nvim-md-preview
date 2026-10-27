@@ -78,6 +78,8 @@ pub struct AppState {
     pub custom_css: Arc<RwLock<String>>,
     /// ブラウザのキーボードショートカット（t / / / Ctrl+F / p）を使う
     pub browser_keys: Arc<RwLock<bool>>,
+    /// Export メニューに出す形式（export.formats）
+    pub export_formats: Arc<RwLock<Vec<String>>>,
     /// アクセス制御（起動時に決まり、以後変わらない）
     pub access: Access,
     /// 最新の差分表示メッセージ（後から接続したブラウザにも送る）
@@ -142,6 +144,9 @@ impl AppState {
             theme: Arc::new(RwLock::new("auto".to_string())),
             custom_css: Arc::new(RwLock::new(String::new())),
             browser_keys: Arc::new(RwLock::new(true)),
+            export_formats: Arc::new(RwLock::new(
+                ["pdf", "docx", "html", "epub", "markdown"].iter().map(|s| s.to_string()).collect(),
+            )),
             access,
             latest_diff: Arc::new(RwLock::new(None)),
         }
@@ -381,9 +386,10 @@ fn handle_browser_message(state: &AppState, text: &str) {
 async fn settings_handler(State(state): State<Arc<AppState>>) -> Response {
     let theme = state.theme.read().await.clone();
     let browser_keys = *state.browser_keys.read().await;
+    let export_formats = state.export_formats.read().await.clone();
     (
         [(header::CONTENT_TYPE, "application/json")],
-        serde_json::json!({ "theme": theme, "browser_keys": browser_keys }).to_string(),
+        serde_json::json!({ "theme": theme, "browser_keys": browser_keys, "export_formats": export_formats }).to_string(),
     ).into_response()
 }
 
@@ -1121,7 +1127,7 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
         <button class="export-item" data-format="docx">DOCX <span style="font-size:.7rem;color:var(--fg-muted)">(pandoc)</span></button>
         <button class="export-item" data-format="html">HTML <span style="font-size:.7rem;color:var(--fg-muted)">(pandoc)</span></button>
         <button class="export-item" data-format="epub">EPUB <span style="font-size:.7rem;color:var(--fg-muted)">(pandoc)</span></button>
-        <div style="height:1px;background:var(--stroke);margin:.25rem 0"></div>
+        <div class="export-sep" style="height:1px;background:var(--stroke);margin:.25rem 0"></div>
         <button class="export-item" data-format="markdown">Markdown</button>
       </div>
     </div>
@@ -1771,6 +1777,13 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       configuredTheme = cfg.theme || 'auto';
       if (resolveTheme() !== currentTheme) themeBtn.click();
       browserKeys = cfg.browser_keys !== false;
+      // export.formats に無い形式はメニューから外し、1 つも無ければ Export ボタンごと隠す
+      if (Array.isArray(cfg.export_formats)) {
+        const allowed = new Set(cfg.export_formats), menu = $('exportMenu');
+        menu.querySelectorAll('[data-format]').forEach(b => { b.hidden = !allowed.has(b.dataset.format); });
+        menu.querySelector('.export-sep').hidden = !allowed.has('markdown') || allowed.size === 1;
+        $('exportBtn').parentElement.hidden = allowed.size === 0;
+      }
       if (!browserKeys) {
         // ボタンの説明からキーの案内を外す
         $('tocBtn').title = 'Table of contents';
