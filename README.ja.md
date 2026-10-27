@@ -219,7 +219,6 @@ require("md_preview").setup({
   port = 9876,            -- 使用中なら次の空きポートを使う
   host = "127.0.0.1",     -- "0.0.0.0" で LAN 内の別端末から見られる（トークンが自動で必須になる）
   auto_open = true,       -- 開始時にブラウザを開く
-  lang = "auto",          -- メッセージとプレビュー画面の言語: "auto"（ロケールが日本語なら日本語、それ以外は英語）| "en" | "ja"
   scroll_sync = true,     -- カーソルに合わせてプレビューをスクロール
   follow_buffer = true,   -- 別の Markdown バッファに移ったらプレビューを切り替える
   debounce_ms = 80,       -- 入力が止まってから更新するまでの待ち時間
