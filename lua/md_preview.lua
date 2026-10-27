@@ -77,9 +77,38 @@ local function send_scroll(buf)
   if state.chan_id == nil then return end
   local line  = vim.api.nvim_win_get_cursor(0)[1]
   local total = vim.api.nvim_buf_line_count(buf)
-  -- Windows では整数型を明示（msgpack で正しく符号なし整数として送る）
   pcall(vim.rpcnotify, state.chan_id, "md_preview_scroll",
     math.floor(line), math.floor(total))
+end
+
+--- エクスポートエンジンのパスを解決してバイナリに送る
+local function send_export_config()
+  if state.chan_id == nil then return end
+
+  local install_dir = vim.fn.stdpath("data") .. "/nvim-md-preview"
+  local is_win = vim.fn.has("win32") == 1
+
+  local pandoc_path = M.config.export.pandoc_path
+  if pandoc_path == "" then
+    local auto = install_dir .. "/pandoc" .. (is_win and ".exe" or "")
+    if vim.fn.executable(auto) == 1 then
+      pandoc_path = auto
+    elseif vim.fn.executable("pandoc") == 1 then
+      pandoc_path = "pandoc"
+    end
+  end
+
+  local typst_path = M.config.export.typst_path
+  if typst_path == "" then
+    local auto = install_dir .. "/typst" .. (is_win and ".exe" or "")
+    if vim.fn.executable(auto) == 1 then
+      typst_path = auto
+    elseif vim.fn.executable("typst") == 1 then
+      typst_path = "typst"
+    end
+  end
+
+  pcall(vim.rpcnotify, state.chan_id, "md_preview_config", pandoc_path, typst_path)
 end
 
 --- バッファの変更イベントを購読する
@@ -239,38 +268,6 @@ local function detect_wsl()
   local content = f:read("*a"):lower()
   f:close()
   return content:find("microsoft") ~= nil or content:find("wsl") ~= nil
-end
-
---- エクスポートエンジンのパスを解決してバイナリに送る
-local function send_export_config()
-  if state.chan_id == nil then return end
-
-  local install_dir = vim.fn.stdpath("data") .. "/nvim-md-preview"
-  local is_win = vim.fn.has("win32") == 1
-
-  -- pandoc パス解決
-  local pandoc_path = M.config.export.pandoc_path
-  if pandoc_path == "" then
-    local auto = install_dir .. "/pandoc" .. (is_win and ".exe" or "")
-    if vim.fn.executable(auto) == 1 then
-      pandoc_path = auto
-    elseif vim.fn.executable("pandoc") == 1 then
-      pandoc_path = "pandoc"
-    end
-  end
-
-  -- Typst パス解決
-  local typst_path = M.config.export.typst_path
-  if typst_path == "" then
-    local auto = install_dir .. "/typst" .. (is_win and ".exe" or "")
-    if vim.fn.executable(auto) == 1 then
-      typst_path = auto
-    elseif vim.fn.executable("typst") == 1 then
-      typst_path = "typst"
-    end
-  end
-
-  pcall(vim.rpcnotify, state.chan_id, "md_preview_config", pandoc_path, typst_path)
 end
 
 --- OS・環境に応じてブラウザを開く
