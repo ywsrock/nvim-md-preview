@@ -1,0 +1,32 @@
+name: Bug report
+description: Something does not work as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: markdown
+    attributes:
+      label: Markdown to reproduce
+      description: The smallest Markdown that shows the problem, if it is about rendering.
+      render: markdown
+  - type: textarea
+    id: health
+    attributes:
+      label: ":checkhealth md_preview"
+      description: Paste the output.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: OS, Neovim version, browser
+      placeholder: macOS 15, NVIM v0.11.0, Chrome 130
+    validations:
+      required: true
