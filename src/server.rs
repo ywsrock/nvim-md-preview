@@ -47,7 +47,6 @@ use axum::{
 use serde::Deserialize;
 use std::{path::{Path, PathBuf}, sync::Arc};
 use tokio::sync::{broadcast, mpsc, RwLock};
-use tower_http::cors::CorsLayer;
 
 pub type HtmlSender = broadcast::Sender<String>;
 /// Neovim へ送る通知 (method, params)
@@ -116,7 +115,7 @@ pub async fn start_server(port: u16, state: Arc<AppState>) {
         .route("/lib/katex.min.css",       get(|| async { css_response(KATEX_CSS) }))
         .route("/lib/auto-render.min.js",  get(|| async { js_response(AUTO_RENDER_JS) }))
         .route("/lib/fonts/:name",         get(katex_font_handler))
-        .layer(CorsLayer::permissive())
+        .layer(axum::middleware::from_fn(access_guard))
         .with_state(state);
 
     eprintln!("READY:{}", bound_port);
@@ -136,6 +135,32 @@ async fn find_listener(start_port: u16) -> tokio::net::TcpListener {
     tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("Failed to bind any port")
+}
+
+/// "host:port" / "[::1]:port" からホスト名部分を取り出す
+fn host_name(host_header: &str) -> &str {
+    if let Some(rest) = host_header.strip_prefix('[') {
+        return rest.split(']').next().unwrap_or("");
+    }
+    host_header.rsplit_once(':').map(|(h, _)| h).unwrap_or(host_header)
+}
+
+/// 全リクエストの入口でのアクセス制御
+/// - Host が localhost 系であること（DNS rebinding 対策）
+/// - Origin 付きのリクエスト（fetch / WebSocket）は同一オリジンであること（他サイトからの読み取りを拒否）
+async fn access_guard(req: axum::extract::Request, next: axum::middleware::Next) -> Response {
+    let headers = req.headers();
+    let host = headers.get(header::HOST).and_then(|v| v.to_str().ok()).unwrap_or("");
+    if !matches!(host_name(host), "127.0.0.1" | "localhost" | "::1") {
+        return (StatusCode::FORBIDDEN, "forbidden host").into_response();
+    }
+    if let Some(origin) = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()) {
+        let origin_host = origin.split_once("://").map(|(_, h)| h).unwrap_or("");
+        if origin_host != host {
+            return (StatusCode::FORBIDDEN, "cross-origin request").into_response();
+        }
+    }
+    next.run(req).await
 }
 
 fn js_response(data: &'static [u8]) -> impl IntoResponse {
@@ -234,12 +259,25 @@ async fn assets_handler(
     State(state): State<Arc<AppState>>,
 ) -> Response {
     // パストラバーサル防止を最初にチェック（base_dir の有無より先）
-    if params.p.contains("..") { return StatusCode::FORBIDDEN.into_response(); }
+    // 絶対パス・ドライブ指定・".." を含むものは拒否する（Path::join は絶対パスで置き換わるため）
+    let rel = std::path::Path::new(&params.p);
+    if params.p.contains("..")
+        || rel.components().any(|c| !matches!(c, std::path::Component::Normal(_) | std::path::Component::CurDir))
+    {
+        return StatusCode::FORBIDDEN.into_response();
+    }
 
     let base_dir = state.base_dir.read().await;
     let Some(dir) = base_dir.as_ref() else { return StatusCode::NOT_FOUND.into_response(); };
-    let path = dir.join(&params.p);
-    match tokio::fs::read(&path).await {
+    let path = dir.join(rel);
+    // シンボリックリンクで外に出ていないか、実体のパスで確認する
+    let (Ok(real), Ok(real_dir)) = (tokio::fs::canonicalize(&path).await, tokio::fs::canonicalize(dir).await) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if !real.starts_with(&real_dir) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    match tokio::fs::read(&real).await {
         Ok(data) => {
             let mime = mime_from_ext(&path);
             ([(header::CONTENT_TYPE, mime)], data).into_response()
