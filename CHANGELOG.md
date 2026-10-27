@@ -6,7 +6,13 @@ All notable changes are documented here. This project follows [Semantic Versioni
 
 ### Changed
 - All Neovim messages, `:checkhealth`, command descriptions, export errors and the preview page are now in English (they were in Japanese).
-- README rewritten for Neovim users: hero GIF with Neovim and the preview side by side, comparison with other preview plugins, migration guide from markdown-preview.nvim and recipes.
+- README rewritten for Neovim users: hero GIF with Neovim and the preview side by side, comparison with other preview plugins, migration guide from markdown-preview.nvim, recipes, and a screenshot for each feature in dark and light themes.
+
+### Fixed
+- The preview toolbar scrolled out of view after one screen on long documents.
+- GitHub alerts and callouts were shown in gray instead of their colors.
+- Callouts, tables, code and links lost their styling in presentation mode.
+- In the Git diff view, a change inside a table was attributed to the heading above it, and a change only inside math showed a mark without the previous version.
 
 ## [0.3.0] - 2026-10-28
 

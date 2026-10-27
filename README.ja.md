@@ -82,19 +82,89 @@ use { "ywsrock/nvim-md-preview", run = ":MdPreviewInstall" }
 
 ### オフラインで何でも描画
 
-![Mermaid・数式・コード・callout を含むプレビュー](docs/demo.gif)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/render-dark.png">
+  <img alt="Mermaid のフローチャートを含むハンドブックのプレビュー" src="docs/media/render-light.png">
+</picture>
 
-GitHub 形式の Markdown、Mermaid の図、KaTeX の数式、190 言語のシンタックスハイライト、GitHub Alerts と Obsidian の callout、ホバーで出る脚注、絵文字、front matter、目次、ページ内検索に対応しています。
+Mermaid の図、KaTeX の数式、190 言語のシンタックスハイライトをバイナリに内蔵しているので、ネットワークから何も取得しません。
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/tables-dark.png">
+  <img alt="表と数式" src="docs/media/tables-light.png">
+</picture>
+
+**表と数式。** 揃え指定つきの GitHub 形式の表、インライン・ブロックの数式。
+
+</td>
+<td width="50%" valign="top">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/callouts-dark.png">
+  <img alt="コードブロック、callout、タスクリスト" src="docs/media/callouts-light.png">
+</picture>
+
+**コード・callout・タスク。** GitHub Alerts と Obsidian の callout（折りたたみも）、タスクリスト、脚注。
+
+</td>
+</tr>
+</table>
 
 ### 何が変わったかを見る
 
-![単語単位の差分、削除された段落、変更箇所への移動](docs/diff.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/diff-dark.png">
+  <img alt="Git の HEAD との単語単位の差分" src="docs/media/diff-light.png">
+</picture>
 
-`:MdPreviewDiff` で、バッファの内容（未保存の編集を含む）を `HEAD`・ステージ済みの内容・任意のブランチと比較します。変わった語は下線や取り消し線でその場に表示され、削除された段落は折りたたんで残り、変更箇所を順に移動できます。
+`:MdPreviewDiff` で、バッファの内容（未保存の編集を含む）を `HEAD`・ステージ済みの内容・任意のブランチと比較します。変わった語は下線や取り消し線でその場に表示され、表や数式は変更前の内容を折りたたみで、削除された段落もその場所に残ります。ヘッダーの ↑ / ↓ で変更箇所を順に移動でき、スクロールバーの横の印で変更の位置が分かります。
 
-### 出力と発表
+### 長い文書でも迷わない
 
-`:MdPreviewExport pdf` で、Typst を使ってファイルの隣に PDF を書き出します。用紙サイズ・余白・フォント・目次・独自のテンプレートを指定できます。DOCX・HTML・EPUB は pandoc で出力します。プレビューで `p` を押すと、`---` で区切ったスライドとして発表できます。
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/toc-search-dark.png">
+  <img alt="目次パネルとページ内検索" src="docs/media/toc-search-light.png">
+</picture>
+
+`t` で目次を開き、`/` か Ctrl+F で検索します。スクロールに合わせて、今いる節が強調されます。
+
+### 発表と印刷
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/slides-dark.png">
+  <img alt="プレゼンモード" src="docs/media/slides-light.png">
+</picture>
+
+**スライド。** `p` で文書をスライドとして発表します。`---` か見出しで区切り、カーソルに追従します。
+
+</td>
+<td width="50%" valign="top">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/print-dark.png">
+  <img alt="A4 の紙面での印刷プレビュー" src="docs/media/print-light.png">
+</picture>
+
+**印刷プレビュー。** 改ページの目安つきの A4 の紙面で確認して、ブラウザから印刷します。
+
+</td>
+</tr>
+</table>
+
+### 出力
+
+`:MdPreviewExport pdf` で、Typst を使ってファイルの隣に PDF を書き出します。用紙サイズ・余白・フォント・目次・独自のテンプレートを指定できます。DOCX・HTML・EPUB は pandoc で出力します。未保存の編集も含まれます。
+
+> [!NOTE]
+> PDF の出力では、Mermaid の図・数式・callout はまだ描画されず、元のテキストのまま出力されます。紙に残したいときは印刷プレビューを使ってください。
 
 ## レシピ
 
