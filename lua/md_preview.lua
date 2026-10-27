@@ -20,6 +20,13 @@ M.config = {
   follow_buffer = true,
   -- 入力が止まってからプレビューを更新するまでの待ち時間（ms）
   debounce_ms = 80,
+  -- 初期テーマ: "auto"（OS の設定に従う）| "dark" | "light"
+  --   ブラウザのボタンで切り替えた場合はそちらが優先される
+  theme = "auto",
+  -- 追加の CSS ファイル（組み込みスタイルの後に読み込まれ、上書きできる）
+  custom_css = "",
+  -- [[page]] / [[page|label]] 形式の Wiki リンクを有効にする
+  wiki_links = true,
 
   -- エクスポート設定
   export = {
@@ -32,6 +39,17 @@ M.config = {
     -- バイナリパス（空の場合は自動ダウンロード先 ~/.local/share/nvim/nvim-md-preview/ を使用）
     pandoc_path = "",
     typst_path  = "",
+
+    -- 出力の体裁（PDF は Typst、DOCX/HTML/EPUB は pandoc に反映）
+    paper     = "a4",   -- 用紙サイズ（PDF）: "a4" | "a5" | "us-letter" など Typst の用紙名
+    margin    = "2cm",  -- 余白（PDF）
+    font      = "",     -- 本文フォント（PDF）。空なら Noto Serif CJK JP などを使う
+    font_size = 11,     -- 本文サイズ pt（PDF）
+    toc       = false,  -- 目次を入れる
+    numbering = false,  -- 見出しに番号を付ける
+    -- Typst テンプレート（PDF）。`template` 関数を export した .typ ファイル
+    --   例: #let template(doc) = { set page(header: [社外秘]); doc }
+    template  = "",
   },
 }
 
@@ -130,7 +148,32 @@ local function send_export_config()
     end
   end
 
-  pcall(vim.rpcnotify, state.chan_id, "md_preview_config", pandoc_path, typst_path)
+  local ex = M.config.export
+  local custom_css = ""
+  if M.config.custom_css ~= "" then
+    local path = vim.fn.expand(M.config.custom_css)
+    local ok, lines = pcall(vim.fn.readfile, path)
+    if ok then
+      custom_css = table.concat(lines, "\n")
+    else
+      vim.notify("[md-preview] custom_css を読み込めません: " .. path, vim.log.levels.WARN)
+    end
+  end
+
+  pcall(vim.rpcnotify, state.chan_id, "md_preview_config", pandoc_path, typst_path, {
+    theme      = M.config.theme,
+    custom_css = custom_css,
+    wiki_links = M.config.wiki_links,
+    export = {
+      paper     = ex.paper,
+      margin    = ex.margin,
+      font      = ex.font,
+      font_size = ex.font_size,
+      toc       = ex.toc,
+      numbering = ex.numbering,
+      template  = ex.template ~= "" and vim.fn.fnamemodify(vim.fn.expand(ex.template), ":p") or "",
+    },
+  })
 end
 
 --- バッファの変更イベントを購読する
@@ -256,6 +299,10 @@ function M.start()
 
   if not start_binary() then return end
 
+  -- 設定（描画オプション・テーマなど）を最初の内容より先に送る。
+  -- RPC は順番どおりに届くので、初回描画から設定が反映される
+  send_export_config()
+
   -- バッファを監視開始
   attach_buffer(buf)
 
@@ -326,6 +373,29 @@ function M._goto_line(line)
   vim.api.nvim_win_set_cursor(win, { line, 0 })
   -- カーソル行を画面中央に
   vim.api.nvim_win_call(win, function() vim.cmd("normal! zz") end)
+end
+
+--- プレビュー内のローカル Markdown リンク / Wiki リンクを開く（バイナリから呼ばれる）
+--- path はプレビュー中ファイルからの相対パス
+function M._open_link(path)
+  local buf = state.buf_id
+  if buf == nil or not vim.api.nvim_buf_is_valid(buf) then return end
+  local base = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(buf), ":h")
+  local target = vim.fn.fnamemodify(base .. "/" .. path, ":p")
+  -- Wiki リンク [[Page]] は大文字小文字・空白の違いを許して探す
+  if vim.fn.filereadable(target) == 0 then
+    local want = vim.fn.fnamemodify(path, ":t"):lower():gsub("[%s_-]", "")
+    for _, f in ipairs(vim.fn.globpath(base, "**/*.md", false, true)) do
+      if vim.fn.fnamemodify(f, ":t"):lower():gsub("[%s_-]", "") == want then target = f; break end
+    end
+  end
+  if vim.fn.filereadable(target) == 0 then
+    vim.notify("[md-preview] ファイルが見つかりません: " .. path, vim.log.levels.WARN)
+    return
+  end
+  local win = vim.fn.bufwinid(buf)
+  if win ~= -1 then vim.api.nvim_set_current_win(win) end
+  vim.cmd("edit " .. vim.fn.fnameescape(target))
 end
 
 --- エクスポート対応形式
@@ -579,7 +649,8 @@ function M.install(opts)
 
   local target, plat
   if sysname == "Linux" then
-    target, plat = "x86_64-unknown-linux-gnu", "linux"
+    target = is_arm and "aarch64-unknown-linux-gnu" or "x86_64-unknown-linux-gnu"
+    plat   = is_arm and "linux-arm64" or "linux"
   elseif sysname == "Darwin" then
     target = is_arm and "aarch64-apple-darwin" or "x86_64-apple-darwin"
     plat   = is_arm and "macos-arm64" or "macos-x86_64"

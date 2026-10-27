@@ -42,6 +42,13 @@ jobs:
             pandoc_asset: linux-amd64.tar.gz
             typst_asset: typst-x86_64-unknown-linux-musl.tar.xz
             typst_bin: typst-linux
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            artifact: nvim-md-preview
+            pandoc_bin: pandoc-linux-arm64
+            pandoc_asset: linux-arm64.tar.gz
+            typst_asset: typst-aarch64-unknown-linux-musl.tar.xz
+            typst_bin: typst-linux-arm64
           - os: macos-latest
             target: x86_64-apple-darwin
             artifact: nvim-md-preview

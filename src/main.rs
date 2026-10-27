@@ -121,7 +121,8 @@ async fn handle_update(state: &AppState, params: &[rmpv::Value]) {
 
     let (front_matter, body) = markdown::extract_front_matter(content);
     let line_offset = markdown::front_matter_line_count(front_matter.as_deref());
-    let html = markdown::to_html(&body, line_offset);
+    let render_opts = *state.render_opts.read().await;
+    let html = markdown::to_html(&body, line_offset, render_opts);
 
     let payload = serde_json::json!({
         "type": "content",
@@ -135,6 +136,8 @@ async fn handle_update(state: &AppState, params: &[rmpv::Value]) {
 
 /// `md_preview_config` 処理 — エンジンパスを受け取る
 /// params: [pandoc_path, typst_path]
+/// params: [pandoc_path, typst_path, options]
+/// options（省略可）: { wiki_links, theme, custom_css, export = { paper, margin, font, font_size, toc, numbering, template } }
 async fn handle_config(state: &AppState, params: &[rmpv::Value]) {
     let pandoc_str = params.first().and_then(|v| v.as_str()).unwrap_or("");
     let typst_str  = params.get(1).and_then(|v| v.as_str()).unwrap_or("");
@@ -144,6 +147,30 @@ async fn handle_config(state: &AppState, params: &[rmpv::Value]) {
     }
     if !typst_str.is_empty() {
         *state.typst_path.write().await = Some(PathBuf::from(typst_str));
+    }
+
+    let Some(opts) = params.get(2) else { return; };
+    let get = |v: &rmpv::Value, key: &str| -> Option<rmpv::Value> {
+        v.as_map()?.iter().find(|(k, _)| k.as_str() == Some(key)).map(|(_, v)| v.clone())
+    };
+    let get_str = |v: &rmpv::Value, key: &str| get(v, key).and_then(|x| x.as_str().map(str::to_string));
+    let get_bool = |v: &rmpv::Value, key: &str| get(v, key).and_then(|x| x.as_bool());
+    let get_num = |v: &rmpv::Value, key: &str| get(v, key)
+        .and_then(|x| x.as_f64().or_else(|| x.as_i64().map(|n| n as f64)).or_else(|| x.as_u64().map(|n| n as f64)));
+
+    state.render_opts.write().await.wiki_links = get_bool(opts, "wiki_links").unwrap_or(false);
+    *state.theme.write().await = get_str(opts, "theme").unwrap_or_else(|| "auto".to_string());
+    *state.custom_css.write().await = get_str(opts, "custom_css").unwrap_or_default();
+
+    if let Some(ex) = get(opts, "export") {
+        let mut eo = state.export_opts.write().await;
+        if let Some(v) = get_str(&ex, "paper")    { eo.paper = v; }
+        if let Some(v) = get_str(&ex, "margin")   { eo.margin = v; }
+        if let Some(v) = get_str(&ex, "font")     { eo.font = v; }
+        if let Some(v) = get_num(&ex, "font_size") { eo.font_size = v; }
+        if let Some(v) = get_bool(&ex, "toc")      { eo.toc = v; }
+        if let Some(v) = get_bool(&ex, "numbering") { eo.numbering = v; }
+        eo.template = get_str(&ex, "template").filter(|s| !s.is_empty()).map(PathBuf::from);
     }
 }
 

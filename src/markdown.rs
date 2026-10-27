@@ -1,4 +1,51 @@
-use pulldown_cmark::{html, Event, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{html, CowStr, Event, Options, Parser, Tag, TagEnd};
+
+/// 描画オプション（Neovim の設定から渡される）
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RenderOptions {
+    /// `[[page]]` / `[[page|label]]` 形式の Wiki リンクを有効にする
+    pub wiki_links: bool,
+}
+
+/// テキスト中の `[[target|label]]` を <a class="wiki-link"> に展開する。
+/// target に拡張子が無ければ `.md` を補う。戻り値は Text / Html イベントの列
+fn expand_wiki_links<'a>(text: &str) -> Vec<Event<'a>> {
+    let mut events = Vec::new();
+    let mut rest = text;
+    while let Some(start) = rest.find("[[") {
+        let Some(len) = rest[start + 2..].find("]]") else { break; };
+        let inner = &rest[start + 2..start + 2 + len];
+        // 空や改行を含むものはリンク扱いしない
+        if inner.trim().is_empty() || inner.contains('\n') {
+            events.push(Event::Text(CowStr::from(rest[..start + 2].to_string())));
+            rest = &rest[start + 2..];
+            continue;
+        }
+        if start > 0 {
+            events.push(Event::Text(CowStr::from(rest[..start].to_string())));
+        }
+        let (target, label) = match inner.split_once('|') {
+            Some((t, l)) => (t.trim(), l.trim()),
+            None => (inner.trim(), inner.trim()),
+        };
+        let has_ext = std::path::Path::new(target).extension().is_some();
+        let href = if has_ext || target.starts_with('#') { target.to_string() } else { format!("{}.md", target) };
+        events.push(Event::Html(CowStr::from(format!(
+            r#"<a class="wiki-link" href="{}">{}</a>"#,
+            html_escape(&href),
+            html_escape(label),
+        ))));
+        rest = &rest[start + 2 + len + 2..];
+    }
+    if !rest.is_empty() {
+        events.push(Event::Text(CowStr::from(rest.to_string())));
+    }
+    events
+}
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+}
 
 /// YAML front matter（`---` で囲まれたブロック）を抽出する。
 /// 戻り値: (front_matter, 本文)
@@ -49,7 +96,7 @@ pub fn front_matter_line_count(front_matter: Option<&str>) -> usize {
 /// スクロール同期・クリックジャンプ用に、ブロック要素の直前（リスト項目と引用は直後）に
 /// `<span class="src-line" data-line="N"></span>` を埋め込む。N は 1 始まりの行番号で、
 /// `line_offset` を足して返す（front matter 分のずれを補正するため）。
-pub fn to_html(markdown: &str, line_offset: usize) -> String {
+pub fn to_html(markdown: &str, line_offset: usize, opts: RenderOptions) -> String {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_FOOTNOTES);
@@ -75,11 +122,26 @@ pub fn to_html(markdown: &str, line_offset: usize) -> String {
     };
 
     let mut in_table = 0usize;
+    let mut in_code = false;
     let mut events: Vec<Event> = Vec::new();
+    // pulldown-cmark は "[" をリンク候補として別のテキストに分けるので、
+    // 連続するテキストをまとめてから Wiki リンクを展開する
+    let mut pending_text = String::new();
     for (event, range) in Parser::new_ext(markdown, options).into_offset_iter() {
+        if opts.wiki_links && !in_code {
+            if let Event::Text(text) = &event {
+                pending_text.push_str(text);
+                continue;
+            }
+            if !pending_text.is_empty() {
+                events.extend(expand_wiki_links(&pending_text));
+                pending_text.clear();
+            }
+        }
         match &event {
             Event::Start(Tag::Table(_)) => { in_table += 1; events.push(event); }
             Event::End(TagEnd::Table) => { in_table -= 1; events.push(event); }
+            Event::End(TagEnd::CodeBlock) => { in_code = false; events.push(event); }
             // テーブル内（<tr>/<td> の間）に span を置くと HTML が壊れるので入れない
             _ if in_table > 0 => events.push(event),
             // <li>/<blockquote> は中に置いてよい（直前に置くと <ul> 直下に span が入る）
@@ -89,9 +151,13 @@ pub fn to_html(markdown: &str, line_offset: usize) -> String {
             }
             Event::Start(Tag::Paragraph)
             | Event::Start(Tag::Heading { .. })
-            | Event::Start(Tag::CodeBlock(_))
             | Event::Start(Tag::HtmlBlock)
             | Event::Start(Tag::List(_)) => {
+                events.push(marker(range.start));
+                events.push(event);
+            }
+            Event::Start(Tag::CodeBlock(_)) => {
+                in_code = true;
                 events.push(marker(range.start));
                 events.push(event);
             }
@@ -101,6 +167,10 @@ pub fn to_html(markdown: &str, line_offset: usize) -> String {
             }
             _ => events.push(event),
         }
+    }
+
+    if !pending_text.is_empty() {
+        events.extend(expand_wiki_links(&pending_text));
     }
 
     let mut html_output = String::new();
@@ -146,7 +216,7 @@ mod tests {
     #[test]
     fn line_markers_point_to_source_lines() {
         let md = "# Title\n\npara one\n\n- a\n- b\n\n```rs\nlet x = 1;\n```\n";
-        let html = to_html(md, 0);
+        let html = to_html(md, 0, RenderOptions::default());
         let lines: Vec<&str> = html
             .match_indices("data-line=\"")
             .map(|(i, _)| {
@@ -160,20 +230,43 @@ mod tests {
 
     #[test]
     fn line_offset_shifts_markers() {
-        let html = to_html("para\n", 3);
+        let html = to_html("para\n", 3, RenderOptions::default());
         assert!(html.contains(r#"data-line="4""#));
     }
 
     #[test]
     fn no_markers_inside_tables() {
         let md = "| a | b |\n|---|---|\n| 1 | 2 |\n";
-        let html = to_html(md, 0);
+        let html = to_html(md, 0, RenderOptions::default());
         assert!(!html.contains("src-line"), "{}", html);
     }
 
     #[test]
+    fn wiki_links_are_expanded() {
+        let opts = RenderOptions { wiki_links: true };
+        let html = to_html("see [[My Page]] and [[docs/a.md|A]] but not `[[code]]`\n", 0, opts);
+        assert!(html.contains(r#"<a class="wiki-link" href="My Page.md">My Page</a>"#), "{}", html);
+        assert!(html.contains(r#"<a class="wiki-link" href="docs/a.md">A</a>"#), "{}", html);
+        assert!(html.contains("<code>[[code]]</code>"), "{}", html);
+    }
+
+    #[test]
+    fn wiki_links_disabled_by_default() {
+        let html = to_html("[[x]]\n", 0, RenderOptions::default());
+        assert!(!html.contains("wiki-link"), "{}", html);
+    }
+
+    #[test]
+    fn wiki_links_skip_code_blocks_and_unclosed() {
+        let opts = RenderOptions { wiki_links: true };
+        let html = to_html("```\n[[x]]\n```\n\n[[unclosed\n", 0, opts);
+        assert!(!html.contains("wiki-link"), "{}", html);
+        assert!(html.contains("[[unclosed"), "{}", html);
+    }
+
+    #[test]
     fn list_item_marker_is_inside_li() {
-        let html = to_html("- item\n", 0);
+        let html = to_html("- item\n", 0, RenderOptions::default());
         assert!(html.contains(r#"<li><span class="src-line" data-line="1"></span>item</li>"#), "{}", html);
     }
 }
