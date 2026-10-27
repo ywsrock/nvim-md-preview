@@ -2,7 +2,7 @@
 
 All notable changes are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.6.0] - 2026-10-28
 
 ### Changed
 - `:MdPreviewInstall` downloads the binary from the release that matches the plugin version instead of always the latest one, and falls back to the latest release when that version is not released.

@@ -6,7 +6,7 @@ local M = {}
 
 -- プラグインの版。Cargo.toml の version と同じにする（CI で照合している）。
 -- :MdPreviewInstall はこの版の Release からバイナリを取得する
-M.version = "0.5.0"
+M.version = "0.6.0"
 
 M._initialized = false
 
