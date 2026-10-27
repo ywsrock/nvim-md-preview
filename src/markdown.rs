@@ -146,7 +146,12 @@ pub fn to_html(markdown: &str, line_offset: usize, opts: RenderOptions) -> Strin
                 format!(r#"<span class="math-inline">\({}\)</span>"#, html_escape(tex))))),
             Event::DisplayMath(tex) => events.push(Event::InlineHtml(CowStr::from(
                 format!(r#"<span class="math-display">\[{}\]</span>"#, html_escape(tex))))),
-            Event::Start(Tag::Table(_)) => { in_table += 1; events.push(event); }
+            // 表の直前には印を置く（中には置かない）。無いと表の変更が直前の見出しの範囲に入ってしまう
+            Event::Start(Tag::Table(_)) => {
+                if in_table == 0 { events.push(marker(range.start)); }
+                in_table += 1;
+                events.push(event);
+            }
             Event::End(TagEnd::Table) => { in_table -= 1; events.push(event); }
             Event::End(TagEnd::CodeBlock) => { in_code = false; events.push(event); }
             // テーブル内（<tr>/<td> の間）に span を置くと HTML が壊れるので入れない
@@ -242,10 +247,12 @@ mod tests {
     }
 
     #[test]
-    fn no_markers_inside_tables() {
+    fn table_has_marker_before_but_not_inside() {
         let md = "| a | b |\n|---|---|\n| 1 | 2 |\n";
         let html = to_html(md, 0, RenderOptions::default());
-        assert!(!html.contains("src-line"), "{}", html);
+        assert!(html.starts_with(r#"<span class="src-line" data-line="1"></span><table>"#), "{}", html);
+        let inside = &html[html.find("<table>").unwrap()..];
+        assert!(!inside.contains("src-line"), "{}", html);
     }
 
     #[test]

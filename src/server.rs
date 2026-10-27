@@ -50,21 +50,6 @@ use tokio::sync::{broadcast, mpsc, RwLock};
 
 pub type HtmlSender = broadcast::Sender<String>;
 
-/// メッセージの言語（Neovim の lang 設定から決まる）。true なら日本語
-static LANG_JA: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-pub fn set_lang(lang: &str) {
-    LANG_JA.store(lang == "ja", std::sync::atomic::Ordering::Relaxed);
-}
-
-pub fn lang() -> &'static str {
-    if LANG_JA.load(std::sync::atomic::Ordering::Relaxed) { "ja" } else { "en" }
-}
-
-/// 言語に合った文を返す
-pub fn tr<'a>(en: &'a str, ja: &'a str) -> &'a str {
-    if LANG_JA.load(std::sync::atomic::Ordering::Relaxed) { ja } else { en }
-}
 /// Neovim へ送る通知 (method, params)
 pub type NvimNotify = (String, Vec<rmpv::Value>);
 
@@ -267,8 +252,7 @@ async fn access_guard(
             return (
                 StatusCode::UNAUTHORIZED,
                 [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
-                tr("A token is required. Open the URL with ?token= shown in Neovim.",
-                   "トークンが必要です。Neovim に表示された URL（?token= 付き）を開いてください。"),
+                "A token is required. Open the URL with ?token= shown in Neovim.",
             ).into_response();
         }
         if from_query.as_deref() == Some(token.as_str()) {
@@ -316,8 +300,7 @@ async fn katex_font_handler(AxumPath(name): AxumPath<String>) -> Response {
 
 /// プレビューページの HTML を返す
 async fn preview_page() -> impl IntoResponse {
-    // 画面の言語は <html lang> で JS に伝える（Neovim の lang 設定）
-    Html(PREVIEW_HTML.replacen(r#"<html lang="ja""#, &format!(r#"<html lang="{}""#, lang()), 1))
+    Html(PREVIEW_HTML)
 }
 
 /// WebSocket アップグレードハンドラ
@@ -492,13 +475,12 @@ fn mime_for_format(filename: &str) -> &'static str {
 /// HTTP (/export) と RPC (:MdPreviewExport) の両方から使う
 pub async fn export_bytes(state: &AppState, format: &str) -> Result<(Vec<u8>, String), String> {
     let Some(ext) = extension_for(format) else {
-        return Err(format!("{}: {}", tr("Unsupported format", "未対応の形式"), format));
+        return Err(format!("{}: {}", "Unsupported format", format));
     };
 
     // プレビュー中の内容（未保存分も含む）を使う
     let content = state.current_content.read().await.clone()
-        .ok_or_else(|| tr("No file is open. Start the preview with :MdPreview.",
-            "ファイルが開かれていません。:MdPreview でプレビューを開始してください。").to_string())?;
+        .ok_or_else(|| "No file is open. Start the preview with :MdPreview.".to_string())?;
     let current_file = state.current_file.read().await.clone();
     let base_dir = state.base_dir.read().await.clone();
     let stem = current_file.as_ref()
@@ -515,10 +497,10 @@ pub async fn export_bytes(state: &AppState, format: &str) -> Result<(Vec<u8>, St
     // 変換ツールにはファイルで渡す。同時実行で衝突しないよう一意な名前にする
     let work = std::env::temp_dir().join(format!("nvim-md-preview-{}-{}", std::process::id(), unique_id()));
     tokio::fs::create_dir_all(&work).await
-        .map_err(|e| format!("{}: {}", tr("Failed to create a temporary directory", "一時ディレクトリの作成に失敗"), e))?;
+        .map_err(|e| format!("{}: {}", "Failed to create a temporary directory", e))?;
     let md_tmp = work.join("input.md");
     tokio::fs::write(&md_tmp, &content).await
-        .map_err(|e| format!("{}: {}", tr("Failed to create a temporary file", "一時ファイルの作成に失敗"), e))?;
+        .map_err(|e| format!("{}: {}", "Failed to create a temporary file", e))?;
 
     let result = if ext == "pdf" {
         let typst = state.typst_path.read().await;
@@ -580,21 +562,20 @@ async fn convert_with_pandoc(
         .output()
         .await
         .map_err(|e| format!("{}\n\n{}: {}",
-            tr("pandoc was not found. Install it with :MdPreviewInstall.", "pandoc が見つかりません。:MdPreviewInstall でインストールしてください。"),
-            tr("Error", "エラー"), e))?;
+            "pandoc was not found. Install it with :MdPreviewInstall.",
+            "Error", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!(
             "{}\n\n{}: {}",
-            tr("pandoc failed to convert the document. Check that pandoc is installed (:MdPreviewInstall).",
-               "pandoc 変換に失敗しました。pandoc がインストールされているか確認してください（:MdPreviewInstall）。"),
-            tr("Error", "エラー"),
+            "pandoc failed to convert the document. Check that pandoc is installed (:MdPreviewInstall).",
+            "Error",
             truncate_chars(&stderr, 500)
         ));
     }
     tokio::fs::read(&out_path).await
-        .map_err(|_| tr("Failed to read the converted file.", "変換結果の読み込みに失敗しました。").to_string())
+        .map_err(|_| "Failed to read the converted file.".to_string())
 }
 
 /// Typst の文字列リテラルに埋め込めるようにエスケープする
@@ -673,7 +654,7 @@ async fn convert_with_typst(
 
     if let Some(tpl) = &opts.template {
         tokio::fs::copy(tpl, work.join("template.typ")).await
-            .map_err(|e| format!("{}: {}\n{}", tr("Cannot read the template", "テンプレートを読み込めません"), tpl.display(), e))?;
+            .map_err(|e| format!("{}: {}\n{}", "Cannot read the template", tpl.display(), e))?;
     }
 
     // 画像用の root は作業ディレクトリと同じ根（ドライブ）にある場合だけ設定する
@@ -685,7 +666,7 @@ async fn convert_with_typst(
 
     let typ_content = build_typst_source(opts, image_prefix.as_deref());
     tokio::fs::write(&typ_path, typ_content).await
-        .map_err(|e| format!("{}: {}", tr("Failed to create a temporary file", "一時ファイルの作成に失敗"), e))?;
+        .map_err(|e| format!("{}: {}", "Failed to create a temporary file", e))?;
 
     let mut args: Vec<String> = vec!["compile".into()];
     if let Some(root) = root {
@@ -700,21 +681,20 @@ async fn convert_with_typst(
         .output()
         .await
         .map_err(|e| format!("{}\n\n{}: {}",
-            tr("Typst was not found. Install it with :MdPreviewInstall.", "Typst が見つかりません。:MdPreviewInstall でインストールしてください。"),
-            tr("Error", "エラー"), e))?;
+            "Typst was not found. Install it with :MdPreviewInstall.",
+            "Error", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!(
             "{}\n\n{}: {}",
-            tr("Typst failed to convert the document. Install Typst with :MdPreviewInstall.",
-               "Typst 変換に失敗しました。:MdPreviewInstall で Typst をインストールしてください。"),
-            tr("Error", "エラー"),
+            "Typst failed to convert the document. Install Typst with :MdPreviewInstall.",
+            "Error",
             truncate_chars(&stderr, 500)
         ));
     }
     tokio::fs::read(&pdf_path).await
-        .map_err(|_| tr("Failed to read the PDF.", "PDF の読み込みに失敗しました。").to_string())
+        .map_err(|_| "Failed to read the PDF.".to_string())
 }
 
 /// 文字境界を壊さずに先頭 max 文字を返す（バイト単位スライスは多バイト文字で panic する）
@@ -776,7 +756,7 @@ pub fn mime_from_ext(path: &std::path::Path) -> &'static str {
 }
 
 const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
-<html lang="ja" data-theme="dark">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -794,6 +774,8 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       --skeleton:rgba(255,255,255,.04);--skeleton-shine:rgba(255,255,255,.08);
       --color-h1:#58a6ff;--color-h2:#a371f7;--color-h3:#3fb950;
       --color-h4:#39d2c0;--color-h5:#d29922;--color-h6:#8b949e;
+      /* GitHub Alerts / callout の色（GitHub と同じ配色） */
+      --color-note:#4493f8;--color-tip:#3fb950;--color-important:#ab7df8;--color-warning:#d29922;--color-caution:#f85149;
     }
     [data-theme="light"] {
       --bg:#fff;--panel:#f6f8fa;--stroke:#d0d7de;--fg:#1f2328;--fg-muted:#656d76;
@@ -805,10 +787,13 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       --skeleton:rgba(0,0,0,.04);--skeleton-shine:rgba(0,0,0,.07);
       --color-h1:#0969da;--color-h2:#8250df;--color-h3:#1a7f37;
       --color-h4:#0e8a7e;--color-h5:#9a6700;--color-h6:#656d76;
+      --color-note:#0969da;--color-tip:#1a7f37;--color-important:#8250df;--color-warning:#9a6700;--color-caution:#d1242f;
     }
     *,*::before,*::after{box-sizing:border-box}
     html{scrollbar-width:thin;scrollbar-color:var(--scroll-thumb) transparent}
-    html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);
+    /* body の高さを画面に固定すると、画面 1 つ分スクロールした所でヘッダーの sticky が外れるので min-height にする */
+    html{height:100%}
+    html,body{min-height:100%;margin:0;background:var(--bg);color:var(--fg);
       font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Helvetica,Arial,sans-serif;
       line-height:1.6;-webkit-font-smoothing:antialiased}
     header{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:.6rem;
@@ -846,57 +831,57 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
     /* content */
     #content{max-width:900px;margin:0 auto;padding:2rem 2rem 4rem;animation:fadeIn .2s ease}
     @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
-    #content>*:first-child{margin-top:0}
-    #content h1,#content h2,#content h3,#content h4,#content h5,#content h6{
+    :is(#content,#slideBody)>*:first-child{margin-top:0}
+    :is(#content,#slideBody) h1,:is(#content,#slideBody) h2,:is(#content,#slideBody) h3,:is(#content,#slideBody) h4,:is(#content,#slideBody) h5,:is(#content,#slideBody) h6{
       position:relative;scroll-margin-top:3.2rem}
-    #content h1{font-size:2em;border-bottom:1px solid var(--stroke);
+    :is(#content,#slideBody) h1{font-size:2em;border-bottom:1px solid var(--stroke);
       border-left:3px solid var(--color-h1);padding-bottom:.3em;padding-left:.6em;margin:1.5em 0 .5em}
-    #content h2{font-size:1.5em;border-bottom:1px solid var(--stroke);
+    :is(#content,#slideBody) h2{font-size:1.5em;border-bottom:1px solid var(--stroke);
       border-left:3px solid var(--color-h2);padding-bottom:.25em;padding-left:.6em;margin:1.4em 0 .5em}
-    #content h3{font-size:1.25em;border-left:3px solid var(--color-h3);padding-left:.6em;margin:1.3em 0 .4em}
-    #content h4{font-size:1em;border-left:3px solid var(--color-h4);padding-left:.6em;margin:1.2em 0 .4em}
-    #content h5,#content h6{font-size:.875em;color:var(--fg-muted);padding-left:.6em;margin:1em 0 .4em}
-    #content h5{border-left:3px solid var(--color-h5)}
-    #content h6{border-left:3px solid var(--color-h6)}
-    #content p{margin:0 0 1em}
-    #content .math-display{display:block;overflow-x:auto;margin:1em 0}
-    #content a{color:var(--link);text-decoration:none}
-    #content a:hover{text-decoration:underline}
-    #content strong{font-weight:600}
-    #content img{max-width:100%;border-radius:6px}
-    #content hr{height:3px;background:var(--stroke);border:none;margin:1.5em 0}
-    #content ul,#content ol{padding-left:2em;margin:0 0 1em}
-    #content li+li{margin-top:.25em}
-    #content .task-list-item{list-style:none;margin-left:-1.5em}
-    #content .task-list-item input[type="checkbox"]{margin-right:.4em}
-    #content blockquote{margin:0 0 1em;padding:.5em 1em;
+    :is(#content,#slideBody) h3{font-size:1.25em;border-left:3px solid var(--color-h3);padding-left:.6em;margin:1.3em 0 .4em}
+    :is(#content,#slideBody) h4{font-size:1em;border-left:3px solid var(--color-h4);padding-left:.6em;margin:1.2em 0 .4em}
+    :is(#content,#slideBody) h5,:is(#content,#slideBody) h6{font-size:.875em;color:var(--fg-muted);padding-left:.6em;margin:1em 0 .4em}
+    :is(#content,#slideBody) h5{border-left:3px solid var(--color-h5)}
+    :is(#content,#slideBody) h6{border-left:3px solid var(--color-h6)}
+    :is(#content,#slideBody) p{margin:0 0 1em}
+    :is(#content,#slideBody) .math-display{display:block;overflow-x:auto;margin:1em 0}
+    :is(#content,#slideBody) a{color:var(--link);text-decoration:none}
+    :is(#content,#slideBody) a:hover{text-decoration:underline}
+    :is(#content,#slideBody) strong{font-weight:600}
+    :is(#content,#slideBody) img{max-width:100%;border-radius:6px}
+    :is(#content,#slideBody) hr{height:3px;background:var(--stroke);border:none;margin:1.5em 0}
+    :is(#content,#slideBody) ul,:is(#content,#slideBody) ol{padding-left:2em;margin:0 0 1em}
+    :is(#content,#slideBody) li+li{margin-top:.25em}
+    :is(#content,#slideBody) .task-list-item{list-style:none;margin-left:-1.5em}
+    :is(#content,#slideBody) .task-list-item input[type="checkbox"]{margin-right:.4em}
+    :is(#content,#slideBody) blockquote{margin:0 0 1em;padding:.5em 1em;
       border-left:4px solid var(--blockquote-border);color:var(--fg-muted)}
-    #content blockquote>*:last-child{margin-bottom:0}
-    #content table{width:100%;border-collapse:collapse;margin:0 0 1em;font-size:.9em}
-    #content th,#content td{padding:.5em .8em;border:1px solid var(--table-border)}
-    #content th{background:var(--panel);font-weight:600}
-    #content tr:nth-child(even){background:var(--table-row-alt)}
-    #content code{background:var(--code-bg);padding:.15em .35em;border-radius:4px;
+    :is(#content,#slideBody) blockquote>*:last-child{margin-bottom:0}
+    :is(#content,#slideBody) table{width:100%;border-collapse:collapse;margin:0 0 1em;font-size:.9em}
+    :is(#content,#slideBody) th,:is(#content,#slideBody) td{padding:.5em .8em;border:1px solid var(--table-border)}
+    :is(#content,#slideBody) th{background:var(--panel);font-weight:600}
+    :is(#content,#slideBody) tr:nth-child(even){background:var(--table-row-alt)}
+    :is(#content,#slideBody) code{background:var(--code-bg);padding:.15em .35em;border-radius:4px;
       font-size:.88em;font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace}
-    #content pre{position:relative;background:var(--code-bg);border:1px solid var(--stroke);
+    :is(#content,#slideBody) pre{position:relative;background:var(--code-bg);border:1px solid var(--stroke);
       border-radius:8px;padding:1em;overflow-x:auto;margin:0 0 1em;
       scrollbar-width:thin;scrollbar-color:var(--scroll-thumb) transparent}
-    #content pre code{background:none;padding:0;border-radius:0;font-size:.85em;line-height:1.55}
+    :is(#content,#slideBody) pre code{background:none;padding:0;border-radius:0;font-size:.85em;line-height:1.55}
     /* code wrap with lang badge + copy btn */
-    #content .code-wrap{position:relative;margin:0 0 1em}
-    #content .code-wrap pre{margin:0}
-    #content .code-wrap .code-lang{position:absolute;top:0;right:0;padding:.2em .6em;
+    :is(#content,#slideBody) .code-wrap{position:relative;margin:0 0 1em}
+    :is(#content,#slideBody) .code-wrap pre{margin:0}
+    :is(#content,#slideBody) .code-wrap .code-lang{position:absolute;top:0;right:0;padding:.2em .6em;
       font-size:.68rem;color:var(--badge-fg);background:var(--badge-bg);
       border-bottom-left-radius:6px;border-top-right-radius:7px;
       text-transform:uppercase;letter-spacing:.5px;font-weight:500;line-height:1.4;pointer-events:none;z-index:2}
-    #content .code-wrap .copy-btn{position:absolute;top:6px;right:6px;width:28px;height:28px;
+    :is(#content,#slideBody) .code-wrap .copy-btn{position:absolute;top:6px;right:6px;width:28px;height:28px;
       display:flex;align-items:center;justify-content:center;
       background:var(--panel);border:1px solid var(--stroke);border-radius:6px;
       cursor:pointer;opacity:0;transition:opacity .15s,background .15s;color:var(--fg-muted);padding:0;z-index:2}
-    #content .code-wrap:hover .copy-btn{opacity:1}
-    #content .code-wrap .copy-btn:hover{color:var(--fg);background:rgba(127,127,127,.15)}
-    #content .code-wrap .copy-btn.copied{color:#3fb950}
-    #content .code-wrap .code-lang ~ .copy-btn{top:26px}
+    :is(#content,#slideBody) .code-wrap:hover .copy-btn{opacity:1}
+    :is(#content,#slideBody) .code-wrap .copy-btn:hover{color:var(--fg);background:rgba(127,127,127,.15)}
+    :is(#content,#slideBody) .code-wrap .copy-btn.copied{color:#3fb950}
+    :is(#content,#slideBody) .code-wrap .code-lang ~ .copy-btn{top:26px}
     /* mermaid */
     .mermaid-block{position:relative;margin:1em 0;border:1px solid var(--stroke);
       border-radius:10px;background:var(--panel);overflow:hidden;min-height:60px}
@@ -942,41 +927,41 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       border-top:none;border-radius:0 0 8px 8px;white-space:pre-wrap;
       color:var(--fg-muted);font-size:.82rem;background:var(--panel)}
     /* GitHub Alerts */
-    #content .markdown-alert{padding:.5rem 1em;margin-bottom:16px;
+    :is(#content,#slideBody) .markdown-alert{padding:.5rem 1em;margin-bottom:16px;
       border-left:.25em solid #888;border-radius:0 6px 6px 0;background:var(--badge-bg)}
-    #content .markdown-alert>:first-child{margin-top:0}
-    #content .markdown-alert>:last-child{margin-bottom:0}
-    #content .markdown-alert-title{display:flex;font-weight:500;align-items:center;
+    :is(#content,#slideBody) .markdown-alert>:first-child{margin-top:0}
+    :is(#content,#slideBody) .markdown-alert>:last-child{margin-bottom:0}
+    :is(#content,#slideBody) .markdown-alert-title{display:flex;font-weight:500;align-items:center;
       line-height:1;margin-bottom:.5em;gap:.4em}
-    #content .markdown-alert-note  {border-left-color:var(--color-note)}
-    #content .markdown-alert-note   .markdown-alert-title{color:var(--color-note)}
-    #content .markdown-alert-tip   {border-left-color:var(--color-tip)}
-    #content .markdown-alert-tip    .markdown-alert-title{color:var(--color-tip)}
-    #content .markdown-alert-warning{border-left-color:var(--color-warning)}
-    #content .markdown-alert-warning .markdown-alert-title{color:var(--color-warning)}
-    #content .markdown-alert-caution{border-left-color:var(--color-caution)}
-    #content .markdown-alert-caution .markdown-alert-title{color:var(--color-caution)}
-    #content .markdown-alert-important{border-left-color:var(--color-important)}
-    #content .markdown-alert-important .markdown-alert-title{color:var(--color-important)}
+    :is(#content,#slideBody) .markdown-alert-note  {border-left-color:var(--color-note)}
+    :is(#content,#slideBody) .markdown-alert-note   .markdown-alert-title{color:var(--color-note)}
+    :is(#content,#slideBody) .markdown-alert-tip   {border-left-color:var(--color-tip)}
+    :is(#content,#slideBody) .markdown-alert-tip    .markdown-alert-title{color:var(--color-tip)}
+    :is(#content,#slideBody) .markdown-alert-warning{border-left-color:var(--color-warning)}
+    :is(#content,#slideBody) .markdown-alert-warning .markdown-alert-title{color:var(--color-warning)}
+    :is(#content,#slideBody) .markdown-alert-caution{border-left-color:var(--color-caution)}
+    :is(#content,#slideBody) .markdown-alert-caution .markdown-alert-title{color:var(--color-caution)}
+    :is(#content,#slideBody) .markdown-alert-important{border-left-color:var(--color-important)}
+    :is(#content,#slideBody) .markdown-alert-important .markdown-alert-title{color:var(--color-important)}
     /* Obsidian 形式の callout（GitHub Alerts の 5 種以外） */
-    #content .markdown-alert-info{border-left-color:var(--color-note)}
-    #content .markdown-alert-info .markdown-alert-title{color:var(--color-note)}
-    #content .markdown-alert-success{border-left-color:var(--color-tip)}
-    #content .markdown-alert-success .markdown-alert-title{color:var(--color-tip)}
-    #content .markdown-alert-question{border-left-color:var(--color-warning)}
-    #content .markdown-alert-question .markdown-alert-title{color:var(--color-warning)}
-    #content .markdown-alert-bug,#content .markdown-alert-failure{border-left-color:var(--color-caution)}
-    #content .markdown-alert-bug .markdown-alert-title,#content .markdown-alert-failure .markdown-alert-title{color:var(--color-caution)}
-    #content .markdown-alert-example,#content .markdown-alert-abstract,#content .markdown-alert-todo{border-left-color:var(--color-important)}
-    #content .markdown-alert-example .markdown-alert-title,#content .markdown-alert-abstract .markdown-alert-title,#content .markdown-alert-todo .markdown-alert-title{color:var(--color-important)}
-    #content .markdown-alert-quote{border-left-color:var(--fg-muted)}
-    #content details.markdown-alert>summary{cursor:pointer;list-style:none}
-    #content details.markdown-alert>summary::-webkit-details-marker{display:none}
-    #content details.markdown-alert>summary::after{content:'▸';margin-left:auto;transition:transform .15s}
-    #content details.markdown-alert[open]>summary::after{transform:rotate(90deg)}
-    #content details.markdown-alert:not([open])>summary{margin-bottom:0}
-    #content a.wiki-link{border-bottom:1px dashed var(--link)}
-    #content a.wiki-link:hover{text-decoration:none;border-bottom-style:solid}
+    :is(#content,#slideBody) .markdown-alert-info{border-left-color:var(--color-note)}
+    :is(#content,#slideBody) .markdown-alert-info .markdown-alert-title{color:var(--color-note)}
+    :is(#content,#slideBody) .markdown-alert-success{border-left-color:var(--color-tip)}
+    :is(#content,#slideBody) .markdown-alert-success .markdown-alert-title{color:var(--color-tip)}
+    :is(#content,#slideBody) .markdown-alert-question{border-left-color:var(--color-warning)}
+    :is(#content,#slideBody) .markdown-alert-question .markdown-alert-title{color:var(--color-warning)}
+    :is(#content,#slideBody) .markdown-alert-bug,:is(#content,#slideBody) .markdown-alert-failure{border-left-color:var(--color-caution)}
+    :is(#content,#slideBody) .markdown-alert-bug .markdown-alert-title,:is(#content,#slideBody) .markdown-alert-failure .markdown-alert-title{color:var(--color-caution)}
+    :is(#content,#slideBody) .markdown-alert-example,:is(#content,#slideBody) .markdown-alert-abstract,:is(#content,#slideBody) .markdown-alert-todo{border-left-color:var(--color-important)}
+    :is(#content,#slideBody) .markdown-alert-example .markdown-alert-title,:is(#content,#slideBody) .markdown-alert-abstract .markdown-alert-title,:is(#content,#slideBody) .markdown-alert-todo .markdown-alert-title{color:var(--color-important)}
+    :is(#content,#slideBody) .markdown-alert-quote{border-left-color:var(--fg-muted)}
+    :is(#content,#slideBody) details.markdown-alert>summary{cursor:pointer;list-style:none}
+    :is(#content,#slideBody) details.markdown-alert>summary::-webkit-details-marker{display:none}
+    :is(#content,#slideBody) details.markdown-alert>summary::after{content:'▸';margin-left:auto;transition:transform .15s}
+    :is(#content,#slideBody) details.markdown-alert[open]>summary::after{transform:rotate(90deg)}
+    :is(#content,#slideBody) details.markdown-alert:not([open])>summary{margin-bottom:0}
+    :is(#content,#slideBody) a.wiki-link{border-bottom:1px dashed var(--link)}
+    :is(#content,#slideBody) a.wiki-link:hover{text-decoration:none;border-bottom-style:solid}
     /* 脚注ポップアップ */
     #fn-pop{position:absolute;z-index:30;max-width:420px;padding:.6rem .8rem;font-size:.85rem;
       background:var(--panel);border:1px solid var(--stroke);border-radius:8px;
@@ -1009,35 +994,35 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
     /* 差分の色（Neovim から gitsigns / DiffAdd などの色が届けば上書きされる） */
     :root{--diff-add:#3fb950;--diff-mod:#d29922;--diff-del:#f85149}
     /* 変わったブロック: 左端のバー + 記号（色だけに頼らない）+ 薄い背景 */
-    #content .diff-add,#content .diff-mod{position:relative;border-radius:3px}
-    #content .diff-add{background:color-mix(in srgb,var(--diff-add) 9%,transparent)}
-    #content .diff-mod{background:color-mix(in srgb,var(--diff-mod) 9%,transparent)}
-    #content .diff-add::after,#content .diff-mod::after{content:'';position:absolute;left:-14px;top:0;bottom:0;width:4px;border-radius:2px}
-    #content .diff-add::after{background:var(--diff-add)}
-    #content .diff-mod::after{background:var(--diff-mod)}
-    #content .diff-add::before,#content .diff-mod::before{position:absolute;left:-30px;top:0;
+    :is(#content,#slideBody) .diff-add,:is(#content,#slideBody) .diff-mod{position:relative;border-radius:3px}
+    :is(#content,#slideBody) .diff-add{background:color-mix(in srgb,var(--diff-add) 9%,transparent)}
+    :is(#content,#slideBody) .diff-mod{background:color-mix(in srgb,var(--diff-mod) 9%,transparent)}
+    :is(#content,#slideBody) .diff-add::after,:is(#content,#slideBody) .diff-mod::after{content:'';position:absolute;left:-14px;top:0;bottom:0;width:4px;border-radius:2px}
+    :is(#content,#slideBody) .diff-add::after{background:var(--diff-add)}
+    :is(#content,#slideBody) .diff-mod::after{background:var(--diff-mod)}
+    :is(#content,#slideBody) .diff-add::before,:is(#content,#slideBody) .diff-mod::before{position:absolute;left:-30px;top:0;
       font:700 .85rem/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}
-    #content .diff-add::before{content:'+';color:var(--diff-add)}
-    #content .diff-mod::before{content:'~';color:var(--diff-mod)}
-    #content li.diff-add::after,#content li.diff-mod::after{left:-2.6em}
-    #content li.diff-add::before,#content li.diff-mod::before{left:-3.6em}
+    :is(#content,#slideBody) .diff-add::before{content:'+';color:var(--diff-add)}
+    :is(#content,#slideBody) .diff-mod::before{content:'~';color:var(--diff-mod)}
+    :is(#content,#slideBody) li.diff-add::after,:is(#content,#slideBody) li.diff-mod::after{left:-2.6em}
+    :is(#content,#slideBody) li.diff-add::before,:is(#content,#slideBody) li.diff-mod::before{left:-3.6em}
     /* 単語単位の差分 */
-    #content ins.diff-w{text-decoration:none;border-radius:2px;
+    :is(#content,#slideBody) ins.diff-w{text-decoration:none;border-radius:2px;
       background:color-mix(in srgb,var(--diff-add) 30%,transparent);box-shadow:inset 0 -2px 0 var(--diff-add)}
-    #content del.diff-w{border-radius:2px;color:var(--fg-muted);
+    :is(#content,#slideBody) del.diff-w{border-radius:2px;color:var(--fg-muted);
       background:color-mix(in srgb,var(--diff-del) 22%,transparent);
       text-decoration:line-through;text-decoration-color:var(--diff-del)}
     /* 削除された内容 / 変更前の内容（折りたたみ） */
-    #content .diff-ghost{margin:.4em 0 1em;border:1px dashed var(--diff-del);border-radius:6px;font-size:.92em;
+    :is(#content,#slideBody) .diff-ghost{margin:.4em 0 1em;border:1px dashed var(--diff-del);border-radius:6px;font-size:.92em;
       background:color-mix(in srgb,var(--diff-del) 6%,transparent)}
-    #content .diff-ghost-mod{border-color:var(--diff-mod);background:color-mix(in srgb,var(--diff-mod) 6%,transparent)}
-    #content .diff-ghost>summary{cursor:pointer;padding:.3em .8em;color:var(--diff-del);font-weight:600;
+    :is(#content,#slideBody) .diff-ghost-mod{border-color:var(--diff-mod);background:color-mix(in srgb,var(--diff-mod) 6%,transparent)}
+    :is(#content,#slideBody) .diff-ghost>summary{cursor:pointer;padding:.3em .8em;color:var(--diff-del);font-weight:600;
       white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    #content .diff-ghost-mod>summary{color:var(--diff-mod)}
-    #content .diff-ghost>summary .diff-ghost-preview{font-weight:400;color:var(--fg-muted);margin-left:.5em}
-    #content .diff-ghost-body{padding:.2em .9em .6em;opacity:.85}
-    #content .diff-ghost-del .diff-ghost-body{text-decoration:line-through;text-decoration-color:var(--diff-del)}
-    #content .diff-flash{animation:diffFlash 1.2s ease}
+    :is(#content,#slideBody) .diff-ghost-mod>summary{color:var(--diff-mod)}
+    :is(#content,#slideBody) .diff-ghost>summary .diff-ghost-preview{font-weight:400;color:var(--fg-muted);margin-left:.5em}
+    :is(#content,#slideBody) .diff-ghost-body{padding:.2em .9em .6em;opacity:.85}
+    :is(#content,#slideBody) .diff-ghost-del .diff-ghost-body{text-decoration:line-through;text-decoration-color:var(--diff-del)}
+    :is(#content,#slideBody) .diff-flash{animation:diffFlash 1.2s ease}
     @keyframes diffFlash{0%,40%{outline:2px solid var(--accent);outline-offset:4px}100%{outline:2px solid transparent;outline-offset:4px}}
     /* ヘッダーの差分ナビ（件数・凡例・前後へ移動） */
     #diffNav{display:flex;align-items:center;gap:.35rem;font-size:.75rem;color:var(--fg-muted);white-space:nowrap}
@@ -1073,19 +1058,19 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       html,body{background:#fff!important;height:auto}
       #content{max-width:none!important;width:auto!important;margin:0!important;padding:0!important;
         box-shadow:none!important;background:none!important;animation:none}
-      #content pre,#content table,#content .mermaid-block,#content img,#content blockquote{break-inside:avoid}
-      #content h1,#content h2,#content h3{break-after:avoid}
-      #content .diff-add,#content .diff-mod{background:none}
-      #content .diff-add::before,#content .diff-add::after,#content .diff-mod::before,#content .diff-mod::after{display:none}
-      #content ins.diff-w{background:none;box-shadow:none}
-      #content del.diff-w,#content .diff-ghost,#diffNav,#diffMarkers{display:none!important}
+      :is(#content,#slideBody) pre,:is(#content,#slideBody) table,:is(#content,#slideBody) .mermaid-block,:is(#content,#slideBody) img,:is(#content,#slideBody) blockquote{break-inside:avoid}
+      :is(#content,#slideBody) h1,:is(#content,#slideBody) h2,:is(#content,#slideBody) h3{break-after:avoid}
+      :is(#content,#slideBody) .diff-add,:is(#content,#slideBody) .diff-mod{background:none}
+      :is(#content,#slideBody) .diff-add::before,:is(#content,#slideBody) .diff-add::after,:is(#content,#slideBody) .diff-mod::before,:is(#content,#slideBody) .diff-mod::after{display:none}
+      :is(#content,#slideBody) ins.diff-w{background:none;box-shadow:none}
+      :is(#content,#slideBody) del.diff-w,:is(#content,#slideBody) .diff-ghost,#diffNav,#diffMarkers{display:none!important}
     }
     /* 見出しアンカーリンク */
-    #content .anchor-link{opacity:0;margin-left:.4em;font-size:.8em;
+    :is(#content,#slideBody) .anchor-link{opacity:0;margin-left:.4em;font-size:.8em;
       color:var(--fg-muted);text-decoration:none;transition:opacity .15s}
-    #content h1:hover .anchor-link,#content h2:hover .anchor-link,
-    #content h3:hover .anchor-link,#content h4:hover .anchor-link,
-    #content h5:hover .anchor-link,#content h6:hover .anchor-link{opacity:1}
+    :is(#content,#slideBody) h1:hover .anchor-link,:is(#content,#slideBody) h2:hover .anchor-link,
+    :is(#content,#slideBody) h3:hover .anchor-link,:is(#content,#slideBody) h4:hover .anchor-link,
+    :is(#content,#slideBody) h5:hover .anchor-link,:is(#content,#slideBody) h6:hover .anchor-link{opacity:1}
     /* KaTeX */
     .katex-display{overflow-x:auto;overflow-y:hidden;padding:.5em 0}
   </style>
@@ -1100,24 +1085,24 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
         <path d="M7 15V9l2.5 3L12 9v6M16 12l2-3 2 3M16 12h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     </span>
-    <button id="tocBtn" class="btn" data-tr-title="Table of contents (t)|目次 (t)">
+    <button id="tocBtn" class="btn" title="Table of contents (t)">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h10M4 18h13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
     </button>
     <h1 id="title">md Preview</h1>
     <div id="diffNav" hidden>
-      <span id="diffLegend" data-tr-title="+ added / ~ changed / − removed|+ 追加 / ~ 変更 / − 削除"><i class="lg lg-add">+</i><i class="lg lg-mod">~</i><i class="lg lg-del">−</i></span>
+      <span id="diffLegend" title="+ added / ~ changed / − removed"><i class="lg lg-add">+</i><i class="lg lg-mod">~</i><i class="lg lg-del">−</i></span>
       <span id="diffSummary"></span>
-      <button id="diffPrev" class="btn" data-tr-title="Previous change|前の変更">↑</button>
-      <button id="diffNext" class="btn" data-tr-title="Next change|次の変更">↓</button>
+      <button id="diffPrev" class="btn" title="Previous change">↑</button>
+      <button id="diffNext" class="btn" title="Next change">↓</button>
     </div>
-    <button id="searchBtn" class="btn" data-tr-title="Search (/ or Ctrl+F)|検索 (/ または Ctrl+F)">
+    <button id="searchBtn" class="btn" title="Search (/ or Ctrl+F)">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="m20 20-3.5-3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
     </button>
     <div id="statusDot" class="status-dot" title="Disconnected"></div>
-    <button id="slidesBtn" class="btn" data-tr-title="Presentation mode (p)|プレゼンモード (p)">
+    <button id="slidesBtn" class="btn" title="Presentation mode (p)">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="12" rx="1.5" stroke="currentColor" stroke-width="2"/><path d="M12 16v4M8 20h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
     </button>
-    <button id="printBtn" class="btn" data-tr-title="Print preview (press again to print)|印刷プレビュー（もう一度押すと印刷）">
+    <button id="printBtn" class="btn" title="Print preview (press again to print)">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M6 9V3h12v6M6 18H4a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-2M6 14h12v7H6z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
     </button>
     <button id="themeBtn" class="btn" title="Toggle light/dark">
@@ -1127,7 +1112,7 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
     </button>
     <!-- Export ドロップダウン -->
     <div style="position:relative">
-      <button id="exportBtn" class="btn btn-text" data-tr-title="Export|エクスポート" style="font-size:.78rem;gap:.3rem;width:auto;padding:.35rem .65rem">
+      <button id="exportBtn" class="btn btn-text" title="Export" style="font-size:.78rem;gap:.3rem;width:auto;padding:.35rem .65rem">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Export
       </button>
@@ -1150,22 +1135,22 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
     <div class="skeleton-line"></div>
   </div>
 
-  <nav id="toc" data-tr-aria-label="Table of contents|目次"></nav>
+  <nav id="toc" aria-label="Table of contents"></nav>
   <div id="diffMarkers" aria-hidden="true"></div>
   <div id="slides" hidden>
     <div id="slideStage"><div id="slideBody"></div></div>
     <div id="slideBar">
       <span id="slideNum"></span>
       <div id="slideProgress"><div></div></div>
-      <span data-tr-text="← → to move · Esc to exit · f for fullscreen|← → で移動・Esc で終了・f で全画面"></span>
+      <span>← → to move · Esc to exit · f for fullscreen</span>
     </div>
   </div>
   <div id="searchBar" hidden>
-    <input id="searchInput" type="search" data-tr-placeholder="Search…|検索…" autocomplete="off">
+    <input id="searchInput" type="search" placeholder="Search…" autocomplete="off">
     <span id="searchCount"></span>
-    <button id="searchPrev" class="btn" data-tr-title="Previous (Shift+Enter)|前へ (Shift+Enter)">↑</button>
-    <button id="searchNext" class="btn" data-tr-title="Next (Enter)|次へ (Enter)">↓</button>
-    <button id="searchClose" class="btn" data-tr-title="Close (Esc)|閉じる (Esc)">✕</button>
+    <button id="searchPrev" class="btn" title="Previous (Shift+Enter)">↑</button>
+    <button id="searchNext" class="btn" title="Next (Enter)">↓</button>
+    <button id="searchClose" class="btn" title="Close (Esc)">✕</button>
   </div>
   <div id="content" style="display:none"></div>
 
@@ -1205,19 +1190,6 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
     // ── DOM refs ──────────────────────────────────────────────────
     const $ = id => document.getElementById(id);
 
-    // ── 言語（英語 / 日本語）────────────────────────────────────
-    // サーバーが Neovim の lang 設定に合わせて <html lang> を決める
-    const LANG = document.documentElement.lang === 'ja' ? 'ja' : 'en';
-    const tr = (en, ja) => LANG === 'ja' ? ja : en;
-    // data-tr-<属性>="英語|日本語" を言語に合わせて設定する（data-tr-text は本文）
-    document.querySelectorAll('*').forEach(el => {
-      for (const { name, value } of Array.from(el.attributes)) {
-        if (!name.startsWith('data-tr-')) continue;
-        const [en, ja] = value.split('|');
-        const text = tr(en, ja ?? en), attr = name.slice('data-tr-'.length);
-        if (attr === 'text') el.textContent = text; else el.setAttribute(attr, text);
-      }
-    });
     const contentEl   = $('content');
     const titleEl     = $('title');
     const statusDot   = $('statusDot');
@@ -1362,7 +1334,7 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
         block.className = 'mermaid-block'; block.id = id;
         block.dataset.mermaidSource = source;
         block.innerHTML =
-          `<button class="mermaid-expand-btn" data-expand="${id}" title="${tr('Full screen', '全画面表示')}">${EXPAND_SVG}</button>` +
+          `<button class="mermaid-expand-btn" data-expand="${id}" title="Full screen">${EXPAND_SVG}</button>` +
           `<div class="mermaid-svg-wrap"><p style="color:var(--fg-muted);font-size:.85rem">Rendering…</p></div>`;
         code.closest('pre').replaceWith(block);
       });
@@ -1604,7 +1576,7 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
         const a = document.createElement('a');
         a.className = 'anchor-link';
         a.href = '#' + id;
-        a.title = tr('Link to this heading', 'この見出しへのリンク');
+        a.title = 'Link to this heading';
         a.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="m7.775 3.275 1.25-1.25a3.5 3.5 0 1 1 4.95 4.95l-2.5 2.5a3.5 3.5 0 0 1-4.95 0 .751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018 1.998 1.998 0 0 0 2.83 0l2.5-2.5a2.002 2.002 0 0 0-2.83-2.83l-1.25 1.25a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042Zm-4.69 9.64a1.998 1.998 0 0 0 2.83 0l1.25-1.25a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042l-1.25 1.25a3.5 3.5 0 1 1-4.95-4.95l2.5-2.5a3.5 3.5 0 0 1 4.95 0 .751.751 0 0 1-.018 1.042.751.751 0 0 1-1.042.018 1.998 1.998 0 0 0-2.83 0l-2.5 2.5a1.998 1.998 0 0 0 0 2.83Z"/></svg>';
         h.appendChild(a);
       });
@@ -1801,9 +1773,9 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       browserKeys = cfg.browser_keys !== false;
       if (!browserKeys) {
         // ボタンの説明からキーの案内を外す
-        $('tocBtn').title = tr('Table of contents', '目次');
-        $('searchBtn').title = tr('Search', '検索');
-        $('slidesBtn').title = tr('Presentation mode', 'プレゼンモード');
+        $('tocBtn').title = 'Table of contents';
+        $('searchBtn').title = 'Search';
+        $('slidesBtn').title = 'Presentation mode';
       }
     }).catch(() => {});
     prefersDark.addEventListener('change', () => {
@@ -1824,7 +1796,7 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
     });
     function buildToc() {
       const hs = Array.from(contentEl.querySelectorAll('h1,h2,h3,h4'));
-      if (!hs.length) { tocEl.innerHTML = `<div class="toc-empty">${tr('No headings', '見出しがありません')}</div>`; return; }
+      if (!hs.length) { tocEl.innerHTML = `<div class="toc-empty">No headings</div>`; return; }
       const min = Math.min(...hs.map(h => +h.tagName[1]));
       tocEl.innerHTML = '';
       for (const h of hs) {
@@ -1894,7 +1866,7 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       gotoHit(searchHits.length ? 0 : -1);
     }
     function gotoHit(i) {
-      if (!searchHits.length) { searchCount.textContent = searchInput.value ? tr('No results', '0 件') : ''; return; }
+      if (!searchHits.length) { searchCount.textContent = searchInput.value ? 'No results' : ''; return; }
       searchIdx = (i + searchHits.length) % searchHits.length;
       searchHits.forEach((m, k) => m.classList.toggle('current', k === searchIdx));
       searchHits[searchIdx].scrollIntoView({ block: 'center' });
@@ -2097,8 +2069,9 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       if (!ops) return false;
       const changed = ops.filter(o => o.type !== 'eq').reduce((sum, o) => sum + o.text.trim().length, 0);
       const total = oldText.trim().length + newText.trim().length;
-      // ほとんど書き換わっている場合は、変更前の内容をまとめて見せた方が読みやすい
-      if (!changed || changed / Math.max(1, total) > 0.7) return changed ? false : true;
+      // 比較できる違いが無い（数式の中だけが変わった等）か、ほとんど書き換わっている場合は、
+      // 変更前の内容をまとめて見せた方が分かりやすい
+      if (!changed || changed / Math.max(1, total) > 0.7) return false;
 
       let k = 0, off = 0;
       newNodes.forEach((node, idx) => {
@@ -2151,9 +2124,16 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       const body = oldFragment(html);
       body.className = 'diff-ghost-body';
       renderMath(body);
-      const preview = body.textContent.replace(/\s+/g, ' ').trim().slice(0, 80);
+      // 表などで単語がつながらないよう、テキストを空白区切りで集める
+      const pieces = [];
+      // KaTeX の MathML（\sigma などの元の式）は除き、表示されている文字だけを使う
+      const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, {
+        acceptNode: n => n.parentElement?.closest('.katex-mathml') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+      });
+      while (walker.nextNode()) { const t = walker.currentNode.data.trim(); if (t) pieces.push(t); }
+      const preview = pieces.join(' ').replace(/\s+/g, ' ').slice(0, 80);
       const summary = document.createElement('summary');
-      summary.textContent = kind === 'del' ? tr('− Removed', '− 削除された内容') : tr('~ Before', '~ 変更前の内容');
+      summary.textContent = kind === 'del' ? '− Removed' : '~ Before';
       const pv = document.createElement('span');
       pv.className = 'diff-ghost-preview';
       pv.textContent = preview;
@@ -2169,7 +2149,7 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       nav.hidden = false;
       const base = diffState.base || 'HEAD';
       const hunks = diffState.hunks || [];
-      if (diffState.available === false) { $('diffSummary').textContent = tr(`${base}: Git diff unavailable`, `${base}: Git の差分を取得できません`); return; }
+      if (diffState.available === false) { $('diffSummary').textContent = `${base}: Git diff unavailable`; return; }
 
       const blocks = markerBlocks();
       const counts = { add: 0, mod: 0, del: 0 };
@@ -2246,9 +2226,8 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       diffTargets.forEach(t => counts[t.kind]++);
       const total = counts.add + counts.mod + counts.del;
       $('diffSummary').textContent = total
-        ? tr(`${total} change${total === 1 ? '' : 's'} vs ${base} (+${counts.add} ~${counts.mod} −${counts.del})`,
-             `${base} との差分 ${total} か所（+${counts.add} ~${counts.mod} −${counts.del}）`)
-        : tr(`No changes vs ${base}`, `${base} から変更なし`);
+        ? `${total} change${total === 1 ? '' : 's'} vs ${base} (+${counts.add} ~${counts.mod} −${counts.del})`
+        : `No changes vs ${base}`;
       $('diffPrev').disabled = $('diffNext').disabled = !diffTargets.length;
       positionDiffMarkers();
     }
@@ -2269,7 +2248,7 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
         m.className = 'm-' + t.kind;
         m.style.top = ((r.top + window.scrollY) / docH * trackH) + 'px';
         m.style.height = Math.max(3, r.height / docH * trackH) + 'px';
-        m.title = { add: tr('Added', '追加'), mod: tr('Changed', '変更'), del: tr('Removed', '削除') }[t.kind];
+        m.title = { add: 'Added', mod: 'Changed', del: 'Removed' }[t.kind];
         m.addEventListener('click', () => gotoDiff(i));
         box.appendChild(m);
       });
@@ -2389,7 +2368,7 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       exportMenu.style.display = 'none';
       const label = exportBtn.lastChild.textContent;
       exportBtn.disabled = true;
-      exportBtn.lastChild.textContent = tr(' Converting…', ' 変換中…');
+      exportBtn.lastChild.textContent = ' Converting…';
       try {
         const res = await fetch(`/export?format=${encodeURIComponent(format)}`);
         if (!res.ok) {
@@ -2411,7 +2390,7 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
         link.remove();
         setTimeout(() => URL.revokeObjectURL(url), 10000);
       } catch (e) {
-        alert(`${tr('Export failed', 'エクスポートに失敗しました')} (${format})\n\n${e.message}`);
+        alert(`Export failed (${format})\n\n${e.message}`);
       } finally {
         exportBtn.disabled = false;
         exportBtn.lastChild.textContent = label;

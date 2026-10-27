@@ -4,8 +4,6 @@
 
 local M = {}
 
-local tr = require("md_preview.i18n").tr
-
 -- vim.health の API（Neovim 0.9 以前は report_* 系の名前）
 local health = vim.health or {}
 local h = {
@@ -44,11 +42,11 @@ end
 --- 戻り値: (path, source) / 見つからなければ nil
 local function resolve_engine(name, configured)
   if configured ~= nil and configured ~= "" then
-    return configured, tr("configured", "設定値")
+    return configured, "configured"
   end
   local auto = vim.fn.stdpath("data") .. "/nvim-md-preview/" .. name .. exe
   if vim.fn.executable(auto) == 1 then
-    return auto, tr("downloaded", "自動ダウンロード先")
+    return auto, "downloaded"
   end
   if vim.fn.executable(name) == 1 then
     return vim.fn.exepath(name), "PATH"
@@ -64,26 +62,26 @@ local function check_nvim()
   if v.major > 0 or v.minor >= 9 then
     h.ok("Neovim " .. ver)
   else
-    h.warn(tr("Neovim %s is too old", "Neovim %s は古すぎます", ver),
-      { tr("Update to Neovim 0.9 or later", "Neovim 0.9 以上にアップデートしてください") })
+    h.warn(string.format("Neovim %s is too old", ver),
+      { "Update to Neovim 0.9 or later" })
   end
 end
 
 --- プレビューバイナリ
 local function check_binary(config)
-  h.start(tr("Preview binary", "プレビューバイナリ"))
+  h.start("Preview binary")
   local bin = config.binary
   if vim.fn.executable(bin) == 1 then
-    h.ok(tr("Binary: %s", "バイナリ: %s", bin))
+    h.ok(string.format("Binary: %s", bin))
   elseif vim.fn.filereadable(bin) == 1 then
-    h.error(tr("The binary is not executable: %s", "バイナリに実行権限がありません: %s", bin), {
+    h.error(string.format("The binary is not executable: %s", bin), {
       "chmod +x " .. bin,
-      tr("Or download it again with :MdPreviewInstall", "または :MdPreviewInstall で再ダウンロードしてください"),
+      "Or download it again with :MdPreviewInstall",
     })
   else
-    h.error(tr("Binary not found: %s", "バイナリが見つかりません: %s", bin), {
-      tr("Run :MdPreviewInstall", ":MdPreviewInstall を実行してください"),
-      tr('Or set the path with setup({ binary = "<path>" })', 'または setup({ binary = "<path>" }) でパスを指定してください'),
+    h.error(string.format("Binary not found: %s", bin), {
+      "Run :MdPreviewInstall",
+      'Or set the path with setup({ binary = "<path>" })',
     })
   end
 end
@@ -92,17 +90,15 @@ end
 local function check_engine(name, configured, formats)
   local path, source = resolve_engine(name, configured)
   if not path then
-    h.warn(tr("%s not found (%s export is unavailable)", "%s が見つかりません（%s エクスポートは利用できません）", name, formats), {
-      tr("Run :MdPreviewInstall", ":MdPreviewInstall を実行してください"),
-      tr('Or set the path with setup({ export = { %s_path = "<path>" } })',
-        'または setup({ export = { %s_path = "<path>" } }) でパスを指定してください', name),
+    h.warn(string.format("%s not found (%s export is unavailable)", name, formats), {
+      "Run :MdPreviewInstall",
+      string.format('Or set the path with setup({ export = { %s_path = "<path>" } })', name),
     })
     return
   end
   if vim.fn.executable(path) ~= 1 then
-    h.warn(tr("%s is not executable: %s (%s export is unavailable)", "%s が実行できません: %s（%s エクスポートは利用できません）",
-      name, path, formats), {
-      tr("Check the path in setup({ export = { %s_path = ... } })", "setup({ export = { %s_path = ... } }) のパスを確認してください", name),
+    h.warn(string.format("%s is not executable: %s (%s export is unavailable)", name, path, formats), {
+      string.format("Check the path in setup({ export = { %s_path = ... } })", name),
     })
     return
   end
@@ -111,12 +107,12 @@ local function check_engine(name, configured, formats)
   if ver then
     h.info(ver)
   else
-    h.warn(tr("%s --version failed", "%s --version の実行に失敗しました", name))
+    h.warn(string.format("%s --version failed", name))
   end
 end
 
 local function check_export(config)
-  h.start(tr("Export engines", "エクスポートエンジン"))
+  h.start("Export engines")
   local export = config.export or {}
   check_engine("pandoc", export.pandoc_path, "DOCX / HTML / EPUB")
   check_engine("typst", export.typst_path, "PDF")
@@ -124,7 +120,7 @@ end
 
 --- ダウンロード手段（:MdPreviewInstall で使う）
 local function check_download_tools()
-  h.start(tr("Download tools", "ダウンロードツール"))
+  h.start("Download tools")
   if vim.fn.executable("curl") == 1 then
     h.ok("curl: " .. vim.fn.exepath("curl"))
   elseif vim.fn.executable("wget") == 1 then
@@ -132,28 +128,26 @@ local function check_download_tools()
   elseif is_win and vim.fn.executable("powershell") == 1 then
     h.ok("powershell: " .. vim.fn.exepath("powershell"))
   else
-    h.warn(tr("None of curl, wget or PowerShell found (:MdPreviewInstall will not work)",
-      "curl / wget / PowerShell のいずれも見つかりません（:MdPreviewInstall が使えません）"), {
-      tr("Install curl or wget", "curl または wget をインストールしてください"),
+    h.warn("None of curl, wget or PowerShell found (:MdPreviewInstall will not work)", {
+      "Install curl or wget",
     })
   end
 
   if vim.fn.executable("tar") == 1 then
     h.ok("tar: " .. vim.fn.exepath("tar"))
   else
-    h.info(tr("tar not found (uncompressed files will be downloaded instead of .tar.gz)",
-      "tar が見つかりません（.tar.gz の代わりに非圧縮版をダウンロードします）"))
+    h.info("tar not found (uncompressed files will be downloaded instead of .tar.gz)")
   end
 end
 
 --- ブラウザ起動手段（M._open_browser と同じ優先順位）
 local function check_browser_opener(config)
-  h.start(tr("Browser", "ブラウザ"))
+  h.start("Browser")
   if vim.fn.has("mac") == 1 then
     if vim.fn.executable("open") == 1 then
       h.ok("open (macOS)")
     else
-      h.warn(tr("The open command was not found", "open コマンドが見つかりません"))
+      h.warn("The open command was not found")
     end
   elseif detect_wsl() then
     if vim.fn.executable("wslview") == 1 then
@@ -165,23 +159,23 @@ local function check_browser_opener(config)
     elseif vim.fn.executable("xdg-open") == 1 then
       h.ok("xdg-open (WSL)")
     else
-      h.warn(tr("No command to open the browser was found", "ブラウザを開くコマンドが見つかりません"), {
-        tr("Install the wslu package (wslview)", "wslu パッケージ（wslview）をインストールしてください"),
+      h.warn("No command to open the browser was found", {
+        "Install the wslu package (wslview)",
       })
     end
   elseif vim.fn.has("unix") == 1 then
     if vim.fn.executable("xdg-open") == 1 then
       h.ok("xdg-open (Linux)")
     else
-      h.warn(tr("xdg-open not found", "xdg-open が見つかりません"), {
-        tr("Install xdg-utils", "xdg-utils をインストールしてください"),
+      h.warn("xdg-open not found", {
+        "Install xdg-utils",
       })
     end
   else
     if vim.fn.executable("cmd.exe") == 1 then
       h.ok("cmd.exe (Windows)")
     else
-      h.warn(tr("cmd.exe not found", "cmd.exe が見つかりません"))
+      h.warn("cmd.exe not found")
     end
   end
   h.info("auto_open = " .. tostring(config.auto_open))
@@ -189,9 +183,8 @@ end
 
 --- ポート設定
 local function check_port(config)
-  h.start(tr("Server", "サーバー"))
-  h.info(tr("port = %s (the next free port is used if it is taken)", "port = %s（使用中の場合は自動で空きポートを使用します）",
-    tostring(config.port)))
+  h.start("Server")
+  h.info(string.format("port = %s (the next free port is used if it is taken)", tostring(config.port)))
 end
 
 function M.check()

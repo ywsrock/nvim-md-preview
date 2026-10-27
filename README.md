@@ -78,23 +78,93 @@ This table reflects our understanding as of October 2026. If something is wrong,
 
 ### Two-way sync
 
-The preview keeps the block under your cursor in view, with source-line markers instead of guessing from the scroll ratio. Click a paragraph in the preview and Neovim moves there. Local `.md` links and `[[wiki links]]` open in Neovim too.
+The preview keeps the block under your cursor in view, using source-line markers instead of guessing from the scroll ratio. Click a paragraph in the preview and Neovim moves there. Local `.md` links and `[[wiki links]]` open in Neovim too.
 
 ### Everything renders, offline
 
-![Preview with Mermaid, math, code and callouts](docs/demo.gif)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/render-dark.png">
+  <img alt="Preview of a handbook with a Mermaid flowchart" src="docs/media/render-light.png">
+</picture>
 
-GitHub-flavored Markdown, Mermaid diagrams, KaTeX math, syntax highlighting for 190 languages, GitHub alerts and Obsidian callouts, footnotes with hover popups, emoji, front matter, a table of contents and in-page search.
+Mermaid diagrams, KaTeX math and syntax highlighting for 190 languages are built into the binary, so nothing is fetched from the network.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/tables-dark.png">
+  <img alt="Table and display math" src="docs/media/tables-light.png">
+</picture>
+
+**Tables and math.** GitHub-flavored tables with alignment, inline and display math.
+
+</td>
+<td width="50%" valign="top">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/callouts-dark.png">
+  <img alt="Code block, callouts and task list" src="docs/media/callouts-light.png">
+</picture>
+
+**Code, callouts and tasks.** GitHub alerts and Obsidian callouts, including foldable ones, task lists and footnotes.
+
+</td>
+</tr>
+</table>
 
 ### See what changed
 
-![Inline word diff, removed paragraphs and change navigation](docs/diff.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/diff-dark.png">
+  <img alt="Word-level diff: an added sentence underlined, a removed callout and a new paragraph" src="docs/media/diff-light.png">
+</picture>
 
-`:MdPreviewDiff` compares the buffer, unsaved edits included, with `HEAD`, the index or any branch. Changed words are underlined or struck through in place, removed paragraphs stay visible as collapsed boxes, and you can jump from change to change.
+`:MdPreviewDiff` compares the buffer, unsaved edits included, with `HEAD`, the index or any branch. Changed words are underlined or struck through in place, tables and math show the previous version in a collapsed box, removed paragraphs stay visible, and ↑ / ↓ in the header jump from change to change. The markers beside the scrollbar show where the changes are.
 
-### Export and present
+### Find your way in long documents
 
-`:MdPreviewExport pdf` writes a PDF next to your file using Typst, with paper size, margins, fonts, a table of contents and your own template. DOCX, HTML and EPUB go through pandoc. Press `p` in the preview to present the document as slides split on `---`.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/toc-search-dark.png">
+  <img alt="Table of contents panel and in-page search" src="docs/media/toc-search-light.png">
+</picture>
+
+Open the table of contents with `t` and search with `/` or Ctrl+F. The current section is highlighted as you scroll.
+
+### Present and print
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/slides-dark.png">
+  <img alt="Presentation mode" src="docs/media/slides-light.png">
+</picture>
+
+**Slides.** Press `p` to present the document, split on `---` or on headings. The slide follows your cursor.
+
+</td>
+<td width="50%" valign="top">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/print-dark.png">
+  <img alt="Print preview on an A4 sheet" src="docs/media/print-light.png">
+</picture>
+
+**Print preview.** See the document on an A4 sheet with page-break guides, then print from the browser.
+
+</td>
+</tr>
+</table>
+
+### Export
+
+`:MdPreviewExport pdf` writes a PDF next to your file using Typst, with paper size, margins, fonts, a table of contents and your own template. DOCX, HTML and EPUB go through pandoc. Unsaved edits are included.
+
+> [!NOTE]
+> PDF export does not render Mermaid diagrams, math or callouts yet; they appear as their source text. Use the print preview when you need them on paper.
 
 ## Recipes
 
@@ -219,7 +289,6 @@ require("md_preview").setup({
   port = 9876,            -- the next free port is used if this one is taken
   host = "127.0.0.1",     -- "0.0.0.0" to view from other devices on your LAN (a token is required automatically)
   auto_open = true,       -- open the browser when the preview starts
-  lang = "auto",          -- language of messages and the preview page: "auto" (Japanese if your locale is Japanese, otherwise English) | "en" | "ja"
   scroll_sync = true,     -- scroll the preview with the cursor
   follow_buffer = true,   -- switch the preview when you enter another Markdown buffer
   debounce_ms = 80,       -- wait this long after typing before updating
