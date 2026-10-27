@@ -7,6 +7,9 @@ All notable changes are documented here. This project follows [Semantic Versioni
 ### Changed
 - `:MdPreviewInstall` downloads the binary from the release that matches the plugin version instead of always the latest one, and falls back to the latest release when that version is not released.
 
+### Fixed
+- Formats removed with `export.formats` were still shown in the Export menu: the `hidden` attribute lost to the menu items' `display` style. Any element with `hidden` is now hidden.
+
 ### Added
 - `nvim-md-preview --version`. The plugin checks it when the preview starts and warns when the binary does not match the plugin version; `:checkhealth md_preview` shows both versions.
 
