@@ -2,6 +2,16 @@
 
 All notable changes are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- The v0.4.0 release is missing the Windows files, so `:MdPreviewInstall` fails on Windows with that version. Releases are now created as drafts and published only after every platform has uploaded its files.
+
+### Changed
+- Mermaid, KaTeX and highlight.js are pinned to exact versions (11.17.2, 0.16.47, 11.12.0) and verified against SHA-256 checksums when building. Builds are reproducible and fail if a downloaded file does not match.
+- Windows builds use the same `download-libs.sh` as the other platforms.
+- Notifications and the export menu no longer use emoji.
+
 ## [0.4.0] - 2026-10-28
 
 ### Changed

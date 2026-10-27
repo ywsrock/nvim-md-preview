@@ -653,9 +653,9 @@ end
 --- エクスポート完了通知（バイナリから nvim_exec_lua 経由で呼ばれる）
 function M._on_export_done(ok, path, err)
   if ok then
-    vim.notify(string.format("[md-preview] ✅ Saved: %s", path), vim.log.levels.INFO)
+    vim.notify(string.format("[md-preview] Saved: %s", path), vim.log.levels.INFO)
   else
-    vim.notify("[md-preview] ❌ Export failed" .. "\n" .. (err or ""), vim.log.levels.ERROR)
+    vim.notify("[md-preview] Export failed\n" .. (err or ""), vim.log.levels.ERROR)
   end
 end
 
@@ -911,9 +911,9 @@ function M.install(opts)
     local lines, level = {}, vim.log.levels.INFO
     for _, it in ipairs(items) do
       if it.status == "done" then
-        lines[#lines + 1] = "✅ " .. it.name .. ": " .. it.dest
+        lines[#lines + 1] = "OK      " .. it.name .. ": " .. it.dest
       else
-        lines[#lines + 1] = "❌ " .. it.name .. ": " .. (it.err or "unknown error")
+        lines[#lines + 1] = "FAILED  " .. it.name .. ": " .. (it.err or "unknown error")
           .. "\n   URL: " .. RELEASE_BASE .. it.asset
         level = vim.log.levels.WARN
       end
