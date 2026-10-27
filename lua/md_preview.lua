@@ -4,6 +4,10 @@
 
 local M = {}
 
+-- プラグインの版。Cargo.toml の version と同じにする（CI で照合している）。
+-- :MdPreviewInstall はこの版の Release からバイナリを取得する
+M.version = "0.5.0"
+
 M._initialized = false
 
 local _plugin_dir = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h:h")
@@ -451,6 +455,7 @@ function M.start()
     return
   end
 
+  M._check_binary_version()
   if not start_binary() then return end
 
   -- 設定（描画オプション・テーマなど）を最初の内容より先に送る。
@@ -514,6 +519,24 @@ function M.start()
     end
     vim.notify(string.format("[md-preview] Preview started: %s", url), vim.log.levels.INFO)
   end, 300)
+end
+
+--- バイナリの版（"0.5.0" など）。--version に対応していない古いバイナリは nil
+function M._binary_version(bin)
+  local ok, out = pcall(vim.fn.system, { bin or M.config.binary, "--version" })
+  if not ok or vim.v.shell_error ~= 0 then return nil end
+  return out:match("nvim%-md%-preview (%d+%.%d+%.%d+)")
+end
+
+--- バイナリとプラグインの版が違えば :MdPreviewInstall を促す（1 回の起動につき 1 度だけ）
+function M._check_binary_version()
+  if state.version_checked then return end
+  state.version_checked = true
+  local v = M._binary_version()
+  if v ~= M.version then
+    vim.notify(string.format("[md-preview] The binary is %s but the plugin is v%s. Run :MdPreviewInstall to update it.",
+      v and ("v" .. v) or "an older version", M.version), vim.log.levels.WARN)
+  end
 end
 
 function M._is_loopback(host)
@@ -718,7 +741,15 @@ end
 
 local uv = vim.uv or vim.loop
 
-local RELEASE_BASE = "https://github.com/ywsrock/nvim-md-preview/releases/latest/download/"
+local RELEASES = "https://github.com/ywsrock/nvim-md-preview/releases/"
+
+--- ダウンロード元。プラグインと同じ版の Release を優先し、無ければ（未リリースの版など）最新版を使う
+local function release_bases()
+  return {
+    RELEASES .. "download/v" .. M.version .. "/",
+    RELEASES .. "latest/download/",
+  }
+end
 
 --- ダウンロードコマンドを組み立てる（curl → wget → PowerShell の順で使えるものを選ぶ）
 local function download_cmd(url, dest)
@@ -801,33 +832,44 @@ local function install_item(item, install_dir, is_win, on_done)
     end
   end
 
-  local function fetch_raw()
-    local tmp = item.dest .. ".download"
-    download_async(item, RELEASE_BASE .. item.asset, tmp, function(ok, err)
-      if not ok then return fail(err) end
-      local renamed, rename_err = uv.fs_rename(tmp, item.dest)
-      if not renamed then
-        os.remove(tmp)
-        return fail(rename_err)
-      end
-      succeed()
+  local bases = release_bases()
+
+  -- bases[i] から取得する。失敗したら次のダウンロード元へ
+  local function try_base(i, last_err)
+    local base = bases[i]
+    if not base then return fail(last_err or "download failed") end
+    item.url = base .. item.asset
+
+    local function fetch_raw()
+      local tmp = item.dest .. ".download"
+      download_async(item, base .. item.asset, tmp, function(ok, err)
+        if not ok then return try_base(i + 1, err) end
+        local renamed, rename_err = uv.fs_rename(tmp, item.dest)
+        if not renamed then
+          os.remove(tmp)
+          return fail(rename_err)
+        end
+        succeed()
+      end)
+    end
+
+    if not item.archive or vim.fn.executable("tar") == 0 then
+      return fetch_raw()
+    end
+
+    local archive = install_dir .. "/" .. item.asset .. ".tar.gz"
+    download_async(item, base .. item.asset .. ".tar.gz", archive, function(ok)
+      -- 古いリリースには .tar.gz が無いので非圧縮版にフォールバック
+      if not ok then return fetch_raw() end
+      item.status = "extract"
+      extract_async(archive, install_dir, function(extracted)
+        os.remove(archive)
+        if extracted then succeed() else fetch_raw() end
+      end)
     end)
   end
 
-  if not item.archive or vim.fn.executable("tar") == 0 then
-    return fetch_raw()
-  end
-
-  local archive = install_dir .. "/" .. item.asset .. ".tar.gz"
-  download_async(item, RELEASE_BASE .. item.asset .. ".tar.gz", archive, function(ok)
-    -- 古いリリースには .tar.gz が無いので非圧縮版にフォールバック
-    if not ok then return fetch_raw() end
-    item.status = "extract"
-    extract_async(archive, install_dir, function(extracted)
-      os.remove(archive)
-      if extracted then succeed() else fetch_raw() end
-    end)
-  end)
+  try_base(1)
 end
 
 --- 進捗をコマンドラインに 1 行で表示する（ASCII のみ：表示幅を超えると Hit-Enter が出るため）
@@ -921,7 +963,7 @@ function M.install(opts)
         lines[#lines + 1] = "OK      " .. it.name .. ": " .. it.dest
       else
         lines[#lines + 1] = "FAILED  " .. it.name .. ": " .. (it.err or "unknown error")
-          .. "\n   URL: " .. RELEASE_BASE .. it.asset
+          .. "\n   URL: " .. (it.url or (release_bases()[1] .. it.asset))
         level = vim.log.levels.WARN
       end
     end

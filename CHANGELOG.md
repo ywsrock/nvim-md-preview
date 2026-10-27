@@ -2,6 +2,14 @@
 
 All notable changes are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- `:MdPreviewInstall` downloads the binary from the release that matches the plugin version instead of always the latest one, and falls back to the latest release when that version is not released.
+
+### Added
+- `nvim-md-preview --version`. The plugin checks it when the preview starts and warns when the binary does not match the plugin version; `:checkhealth md_preview` shows both versions.
+
 ## [0.5.0] - 2026-10-28
 
 ### Changed

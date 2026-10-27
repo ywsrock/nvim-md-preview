@@ -36,6 +36,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check versions
+        run: |
+          CARGO=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
+          LUA=$(sed -n 's/^M.version = "\(.*\)"$/\1/p' lua/md_preview.lua)
+          TAG="${GITHUB_REF_NAME#v}"
+          echo "tag: $TAG, Cargo.toml: $CARGO, lua/md_preview.lua: $LUA"
+          [ "$TAG" = "$CARGO" ] && [ "$TAG" = "$LUA" ] || { echo "::error::tag, Cargo.toml and M.version must be the same version"; exit 1; }
+
       - name: Create draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
