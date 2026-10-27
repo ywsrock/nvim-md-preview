@@ -66,8 +66,16 @@ tools and how the browser is opened.
     file is written next to the source with the new extension. The preview
     must be running.
 
-:MdPreviewDiff                                              *:MdPreviewDiff*
-    Toggle |md-preview-git_diff|: mark blocks changed since Git `HEAD`.
+:MdPreviewDiff [{base}]                                     *:MdPreviewDiff*
+    Without an argument, toggle |md-preview-git_diff|. With {base} (`HEAD`,
+    `staged`, a branch, tag or commit), compare against it and turn the diff
+    on. `off` turns it off. Completes branch and tag names.
+
+    Changed paragraphs show inserted words underlined and removed words
+    struck through. Removed paragraphs, and the previous version of changed
+    code, tables, diagrams and math, appear as collapsed boxes. The page
+    header shows the number of changes with buttons to jump between them,
+    and markers beside the scrollbar show where they are.
 
 :MdPreviewInstall                                        *:MdPreviewInstall*
     Download the preview binary, pandoc and Typst in parallel. Progress is
@@ -114,8 +122,18 @@ Call `require("md_preview").setup(opts)`. All keys are optional; defaults:
         toolbar buttons keep working.
 
     git_diff                                          *md-preview-git_diff*
-        `false`. Mark added, modified and deleted blocks compared with Git
-        `HEAD`. Toggle with |:MdPreviewDiff|.
+        `false`. Show Git changes in the preview. Toggle with
+        |:MdPreviewDiff|.
+
+    git_diff_base                                *md-preview-git_diff_base*
+        `"HEAD"`. What to compare against: `"HEAD"`, `"staged"` (the index),
+        or a branch, tag or commit. A file missing from {base} is shown as
+        entirely added; an unknown {base} shows a warning.
+
+    git_diff_colors                            *md-preview-git_diff_colors*
+        `true`. Use the editor's diff colors (`GitSignsAdd`, `Added`,
+        `DiffAdd`, ...). Colors that are hard to read on the preview's theme
+        fall back to the defaults.
 
     binary                                              *md-preview-binary*
         Path to the preview binary. Defaults to the downloaded copy.
@@ -189,7 +207,7 @@ a loopback name and any cross-origin request or WebSocket.
     require("md_preview").start()             Same as |:MarkdownPreview|.
     require("md_preview").stop()              Same as |:MarkdownPreviewStop|.
     require("md_preview").export({fmt}, {path}) Same as |:MdPreviewExport|.
-    require("md_preview").toggle_diff()       Same as |:MdPreviewDiff|.
+    require("md_preview").toggle_diff({base}) Same as |:MdPreviewDiff|.
     require("md_preview").install({opts})     Same as |:MdPreviewInstall|.
         {opts}.missing_only  download only files that are missing
         {opts}.on_done       function(ok) called when finished

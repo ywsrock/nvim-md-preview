@@ -33,8 +33,12 @@ M.config = {
   -- プレビュー画面のキーボードショートカット（t: 目次 / "/" と Ctrl+F: 検索 / p: プレゼンモード）
   --   Vimium などブラウザの Vim 系拡張とキーがぶつかる場合は false にする（ボタンは使える）
   browser_keys = true,
-  -- Git の HEAD から変更されたブロックをプレビューの左端に色で示す（:MdPreviewDiff で切り替え）
+  -- Git の差分をプレビューに表示する（:MdPreviewDiff で切り替え）
   git_diff = false,
+  -- 比較の基準: "HEAD" | "staged"（ステージ済みの内容）| ブランチ名・タグ・コミット
+  git_diff_base = "HEAD",
+  -- 差分の色をエディタ（gitsigns / DiffAdd など）に合わせる
+  git_diff_colors = true,
 
   -- エクスポート設定
   export = {
@@ -110,54 +114,126 @@ local function send_update(buf)
   pcall(vim.rpcnotify, state.chan_id, "md_preview_update", content, title, base_dir, file_path)
 end
 
---- バッファの HEAD 時点の内容を返す（Git 管理外・未コミットなら nil）。結果はバッファごとにキャッシュ
+--- 比較の基準（git_diff_base）を git show に渡す形にする
+--- "HEAD" / ブランチ名 / コミット → "<ref>:./file"、"staged" / "index" → ":./file"（ステージ済みの内容）
+local function git_object(base, file)
+  if base == "staged" or base == "index" then return ":./" .. file end
+  return base .. ":./" .. file
+end
+
+--- 比較の基準となる内容を返す。Git 管理外なら nil、基準に無いファイル（新規）なら ""。
+--- 結果はバッファ・基準ごとにキャッシュする
 local function git_base_content(buf)
-  local cached = state.git_base[buf]
+  local base_name = M.config.git_diff_base or "HEAD"
+  local key = buf .. "\0" .. base_name
+  local cached = state.git_base[key]
   if cached ~= nil then return cached or nil end
   local name = vim.api.nvim_buf_get_name(buf)
   local base = nil
   if name ~= "" and vim.fn.executable("git") == 1 then
     local dir = vim.fn.fnamemodify(name, ":h")
     local file = vim.fn.fnamemodify(name, ":t")
-    local out = vim.fn.system({ "git", "-C", dir, "show", "HEAD:./" .. file })
-    if vim.v.shell_error == 0 then base = out end
-  end
-  state.git_base[buf] = base or false
-  return base
-end
-
---- HEAD との差分（変更行の範囲）をバイナリに送る
-local function send_diff(buf)
-  if state.chan_id == nil then return end
-  if not M.config.git_diff then
-    pcall(vim.rpcnotify, state.chan_id, "md_preview_diff", {})
-    return
-  end
-  local base = git_base_content(buf)
-  local ranges = {}
-  if base then
-    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-    local current = table.concat(lines, "\n") .. "\n"
-    local diff = (vim.text and vim.text.diff) or vim.diff
-    local hunks = diff(base, current, { result_type = "indices" }) or {}
-    local function blank(n) return (lines[n] or ""):match("^%s*$") ~= nil end
-    for _, h in ipairs(hunks) do
-      local _, count_a, start_b, count_b = unpack(h)
-      -- 前後の空行は除く（空行は直前の段落の範囲に含まれるため、別のブロックに印が付いてしまう）
-      local s, e = start_b, start_b + count_b - 1
-      while s <= e and blank(s) do s = s + 1 end
-      while e >= s and blank(e) do e = e - 1 end
-      if count_b == 0 or s > e then
-        -- 削除のみ（または空行だけの変更）: 削除位置（直前の行）に印を付ける
-        if count_a > 0 then
-          table.insert(ranges, { math.max(start_b, 1), math.max(start_b, 1), "del" })
-        end
-      else
-        table.insert(ranges, { s, e, count_a == 0 and "add" or "mod" })
+    local out = vim.fn.system({ "git", "-C", dir, "show", git_object(base_name, file) })
+    if vim.v.shell_error == 0 then
+      base = out
+    else
+      -- 基準は実在するがファイルだけ無い（新規ファイル）なら、全体を「追加」として扱う。
+      -- 基準の名前が間違っている・Git 管理外のときは差分を出さない
+      local staged = base_name == "staged" or base_name == "index"
+      local check = staged and { "git", "-C", dir, "rev-parse", "--is-inside-work-tree" }
+        or { "git", "-C", dir, "rev-parse", "--verify", "--quiet", base_name .. "^{commit}" }
+      vim.fn.system(check)
+      if vim.v.shell_error == 0 then
+        base = ""
+      elseif not staged then
+        vim.notify("[md-preview] 比較の基準が見つかりません: " .. base_name, vim.log.levels.WARN)
       end
     end
   end
-  pcall(vim.rpcnotify, state.chan_id, "md_preview_diff", ranges)
+  state.git_base[key] = base or false
+  return base
+end
+
+--- ハイライトグループの色（#rrggbb）。specs = { { グループ名, "fg" | "bg" }, ... } の順に探す
+local function hl_color(specs)
+  for _, spec in ipairs(specs) do
+    local ok, hl = pcall(vim.api.nvim_get_hl, 0, { name = spec[1], link = false })
+    local c = ok and hl and hl[spec[2]]
+    if c then return string.format("#%06x", c) end
+  end
+  return nil
+end
+
+--- エディタの差分の色（gitsigns があればその色）。git_diff_colors = false なら送らない
+local function diff_colors()
+  if not M.config.git_diff_colors then return {} end
+  -- gitsigns と Added などは文字色、DiffAdd などは行の背景色が差分の色
+  return {
+    add = hl_color({ { "GitSignsAdd", "fg" }, { "Added", "fg" }, { "DiffAdd", "bg" } }),
+    mod = hl_color({ { "GitSignsChange", "fg" }, { "Changed", "fg" }, { "DiffChange", "bg" } }),
+    del = hl_color({ { "GitSignsDelete", "fg" }, { "Removed", "fg" }, { "DiffDelete", "bg" } }),
+  }
+end
+
+--- 基準との差分をバイナリに送る
+--- hunks の各要素: { s, e, kind, old_md, ctx_s, ctx_e }
+---   s..e         変更された行（前後の空行を除く）。kind = "del" のときは削除位置の直前の行（0 = 先頭）
+---   old_md       変更前の Markdown。"mod" は前後の段落（空行まで）を含めて切り出す
+---   ctx_s..ctx_e old_md に対応する現在の行範囲（単語単位の差分に使う）
+local function send_diff(buf)
+  if state.chan_id == nil then return end
+  local info = { enabled = M.config.git_diff and true or false, base = M.config.git_diff_base or "HEAD" }
+  if not M.config.git_diff then
+    pcall(vim.rpcnotify, state.chan_id, "md_preview_diff", {}, info)
+    return
+  end
+  local base = git_base_content(buf)
+  info.available = base ~= nil
+  info.colors = diff_colors()
+  local hunks = {}
+  if base then
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local old_lines = vim.split(base, "\n", { plain = true })
+    if old_lines[#old_lines] == "" then table.remove(old_lines) end
+    local current = table.concat(lines, "\n") .. "\n"
+    local diff = (vim.text and vim.text.diff) or vim.diff
+    local raw = diff(base, current, { result_type = "indices" }) or {}
+    local function blank(list, n) return (list[n] or ""):match("^%s*$") ~= nil end
+    local function slice(list, from, to)
+      local out = {}
+      for i = math.max(from, 1), math.min(to, #list) do out[#out + 1] = list[i] end
+      return table.concat(out, "\n")
+    end
+    for _, h in ipairs(raw) do
+      local start_a, count_a, start_b, count_b = unpack(h)
+      -- 前後の空行は除く（空行は直前の段落の範囲に含まれるため、別のブロックに印が付いてしまう）
+      local s, e = start_b, start_b + count_b - 1
+      while s <= e and blank(lines, s) do s = s + 1 end
+      while e >= s and blank(lines, e) do e = e - 1 end
+      local a_s, a_e = start_a, start_a + count_a - 1
+      while a_s <= a_e and blank(old_lines, a_s) do a_s = a_s + 1 end
+      while a_e >= a_s and blank(old_lines, a_e) do a_e = a_e - 1 end
+
+      if count_b == 0 or s > e then
+        -- 削除のみ（または空行だけの変更）: 削除された内容を削除位置に表示する
+        if a_s <= a_e then
+          table.insert(hunks, { start_b, start_b, "del", slice(old_lines, a_s, a_e), start_b, start_b })
+        end
+      elseif count_a == 0 or a_s > a_e then
+        table.insert(hunks, { s, e, "add", "", s, e })
+      else
+        -- 変更: 前後の段落（空行まで）に広げて切り出す。
+        -- 差分の範囲の外側は変更前後で同じ行なので、両方を同じ行数ずつ広げればよい
+        local hunk_e = start_b + count_b - 1
+        local up, down = 0, 0
+        while start_b - up - 1 >= 1 and not blank(lines, start_b - up - 1) do up = up + 1 end
+        while hunk_e + down + 1 <= #lines and not blank(lines, hunk_e + down + 1) do down = down + 1 end
+        local old_md = slice(old_lines, start_a - up, start_a + count_a - 1 + down)
+        table.insert(hunks, { s, e, "mod", vim.trim(old_md), start_b - up, hunk_e + down })
+      end
+    end
+  end
+  pcall(vim.rpcnotify, state.chan_id, "md_preview_diff", hunks, info)
 end
 
 --- 入力が止まってから send_update する（連続入力で全文送信を繰り返さない）
@@ -480,12 +556,30 @@ function M.stop()
   vim.notify("[md-preview] プレビュー停止", vim.log.levels.INFO)
 end
 
---- Git 差分の表示を切り替える（:MdPreviewDiff）
-function M.toggle_diff()
-  M.config.git_diff = not M.config.git_diff
-  state.git_base = {}  -- HEAD が変わっているかもしれないので取り直す
+--- Git 差分の表示を切り替える（:MdPreviewDiff [base|off]）
+--- 引数なし: ON / OFF を切り替える。"off": OFF。それ以外: その基準と比較して ON
+function M.toggle_diff(base)
+  if base == nil or base == "" then
+    M.config.git_diff = not M.config.git_diff
+  elseif base == "off" then
+    M.config.git_diff = false
+  else
+    M.config.git_diff = true
+    M.config.git_diff_base = base
+  end
+  state.git_base = {}  -- HEAD などが変わっているかもしれないので取り直す
   if state.buf_id then send_diff(state.buf_id) end
-  vim.notify("[md-preview] Git 差分表示: " .. (M.config.git_diff and "ON" or "OFF"), vim.log.levels.INFO)
+  vim.notify("[md-preview] Git 差分表示: "
+    .. (M.config.git_diff and ("ON（" .. M.config.git_diff_base .. " と比較）") or "OFF"), vim.log.levels.INFO)
+end
+
+--- :MdPreviewDiff の補完候補（off / HEAD / staged / ブランチ・タグ）
+function M._diff_complete(arg_lead)
+  local cands = { "off", "HEAD", "staged" }
+  local dir = state.buf_id and vim.fn.fnamemodify(vim.api.nvim_buf_get_name(state.buf_id), ":h") or vim.fn.getcwd()
+  local refs = vim.fn.systemlist({ "git", "-C", dir, "for-each-ref", "--format=%(refname:short)", "refs/heads", "refs/tags", "refs/remotes" })
+  if vim.v.shell_error == 0 then vim.list_extend(cands, refs) end
+  return vim.tbl_filter(function(c) return c:find(arg_lead, 1, true) == 1 end, cands)
 end
 
 --- ブラウザでクリックされた行へカーソルを移動する（バイナリから nvim_exec_lua 経由で呼ばれる）

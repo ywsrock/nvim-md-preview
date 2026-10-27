@@ -5,6 +5,9 @@ All notable changes are documented here. This project follows [Semantic Versioni
 ## [Unreleased]
 
 ### Added
+- Richer `:MdPreviewDiff`: word-level inline diff (character-level for Japanese), removed paragraphs and the previous version of code/tables/diagrams shown as collapsed boxes, change count with next/previous navigation, scrollbar markers, `+ ~ −` symbols and a legend so changes are clear without color.
+- `:MdPreviewDiff {base}` and `git_diff_base` to compare against `staged` or any branch, tag or commit, with completion.
+- `git_diff_colors` uses the editor's diff colors when they are readable on the preview theme.
 - `browser_keys` option to turn off the preview page's keyboard shortcuts (`t`, `/`, Ctrl+F, `p`), which clash with Vim-style browser extensions such as Vimium and Tridactyl. README FAQ explains the clash and how to exclude the preview in each extension.
 
 ## [0.2.0] - 2026-10-28
