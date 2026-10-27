@@ -2,6 +2,14 @@
 
 All notable changes are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- English is now the default language for Neovim messages, `:checkhealth`, export errors and the preview page. A new `lang` option (`"auto"`, `"en"`, `"ja"`) picks Japanese automatically when the locale is Japanese.
+
+### Changed
+- README rewritten for Neovim users: hero GIF with Neovim and the preview side by side, comparison with other preview plugins, migration guide from markdown-preview.nvim and recipes.
+
 ## [0.3.0] - 2026-10-28
 
 ### Added

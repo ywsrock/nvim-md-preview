@@ -137,7 +137,7 @@ async fn handle_update(state: &AppState, params: &[rmpv::Value]) {
 
 /// `md_preview_config` 処理 — エンジンパスを受け取る
 /// params: [pandoc_path, typst_path, options]
-/// options（省略可）: { wiki_links, browser_keys, theme, custom_css, export = { paper, margin, font, font_size, toc, numbering, template } }
+/// options（省略可）: { lang, wiki_links, browser_keys, theme, custom_css, export = { paper, margin, font, font_size, toc, numbering, template } }
 async fn handle_config(state: &AppState, params: &[rmpv::Value]) {
     let pandoc_str = params.first().and_then(|v| v.as_str()).unwrap_or("");
     let typst_str  = params.get(1).and_then(|v| v.as_str()).unwrap_or("");
@@ -161,6 +161,7 @@ async fn handle_config(state: &AppState, params: &[rmpv::Value]) {
     state.render_opts.write().await.wiki_links = get_bool(opts, "wiki_links").unwrap_or(false);
     *state.browser_keys.write().await = get_bool(opts, "browser_keys").unwrap_or(true);
     *state.theme.write().await = get_str(opts, "theme").unwrap_or_else(|| "auto".to_string());
+    server::set_lang(&get_str(opts, "lang").unwrap_or_else(|| "en".to_string()));
     *state.custom_css.write().await = get_str(opts, "custom_css").unwrap_or_default();
 
     if let Some(ex) = get(opts, "export") {
@@ -184,7 +185,7 @@ async fn handle_export(state: &AppState, params: &[rmpv::Value]) {
 
     let result = match server::export_bytes(state, &format).await {
         Ok((data, _filename)) => tokio::fs::write(&out_path, data).await
-            .map_err(|e| format!("書き込みに失敗しました: {}", e)),
+            .map_err(|e| format!("{}: {}", server::tr("Failed to write the file", "書き込みに失敗しました"), e)),
         Err(e) => Err(e),
     };
 
@@ -273,7 +274,7 @@ async fn main() {
     let token = args.get(3).filter(|t| !t.is_empty()).cloned();
     let lan = !matches!(host.as_str(), "127.0.0.1" | "localhost" | "::1");
     if lan && token.is_none() {
-        eprintln!("LAN に公開する場合はトークンが必要です");
+        eprintln!("A token is required to listen on the LAN");
         std::process::exit(2);
     }
     let access = server::Access { lan, token };

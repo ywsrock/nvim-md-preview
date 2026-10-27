@@ -4,6 +4,9 @@
 
 local M = {}
 
+local i18n = require("md_preview.i18n")
+local tr = i18n.tr
+
 M._initialized = false
 
 local _plugin_dir = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h:h")
@@ -17,6 +20,8 @@ M.config = {
   --   その場合は毎回ランダムなトークンを発行し、トークン付き URL でしか開けない
   host = "127.0.0.1",
   auto_open = true,
+  -- メッセージとプレビュー画面の言語: "auto"（Neovim の言語設定が日本語なら日本語、それ以外は英語）| "en" | "ja"
+  lang = "auto",
   -- カーソル移動に合わせてプレビューをスクロールする
   scroll_sync = true,
   -- 別の Markdown バッファに移動したらプレビュー対象を切り替える
@@ -146,7 +151,7 @@ local function git_base_content(buf)
       if vim.v.shell_error == 0 then
         base = ""
       elseif not staged then
-        vim.notify("[md-preview] 比較の基準が見つかりません: " .. base_name, vim.log.levels.WARN)
+        vim.notify("[md-preview] " .. tr("Comparison base not found: %s", "比較の基準が見つかりません: %s", base_name), vim.log.levels.WARN)
       end
     end
   end
@@ -295,11 +300,12 @@ local function send_export_config()
     if ok then
       custom_css = table.concat(lines, "\n")
     else
-      vim.notify("[md-preview] custom_css を読み込めません: " .. path, vim.log.levels.WARN)
+      vim.notify("[md-preview] " .. tr("Cannot read custom_css: %s", "custom_css を読み込めません: %s", path), vim.log.levels.WARN)
     end
   end
 
   pcall(vim.rpcnotify, state.chan_id, "md_preview_config", pandoc_path, typst_path, {
+    lang       = i18n.lang(),
     theme      = M.config.theme,
     custom_css = custom_css,
     wiki_links = M.config.wiki_links,
@@ -380,7 +386,7 @@ local function start_binary()
     rpc = true,
     on_exit = function(_, exit_code, _)
       vim.notify(
-        string.format("[md-preview] バイナリが終了しました (exit: %d)", exit_code),
+        "[md-preview] " .. tr("The binary exited (exit: %d)", "バイナリが終了しました (exit: %d)", exit_code),
         vim.log.levels.WARN
       )
       state.job_id = nil
@@ -406,7 +412,7 @@ local function start_binary()
   })
 
   if state.job_id <= 0 then
-    vim.notify("[md-preview] バイナリの起動に失敗しました: " .. M.config.binary, vim.log.levels.ERROR)
+    vim.notify("[md-preview] " .. tr("Failed to start the binary: %s", "バイナリの起動に失敗しました: %s", M.config.binary), vim.log.levels.ERROR)
     state.job_id = nil
     return false
   end
@@ -421,19 +427,20 @@ function M.start()
   local filetype = vim.bo[buf].filetype
 
   if filetype ~= "markdown" then
-    vim.notify("[md-preview] Markdown ファイルではありません (filetype: " .. filetype .. ")", vim.log.levels.WARN)
+    vim.notify("[md-preview] " .. tr("Not a Markdown file (filetype: %s)", "Markdown ファイルではありません (filetype: %s)", filetype), vim.log.levels.WARN)
     return
   end
 
   -- バイナリが存在しなければ自動ダウンロードし、完了後にプレビューを開始する
   if vim.fn.executable(M.config.binary) == 0 then
-    vim.notify("[md-preview] バイナリが見つかりません。ダウンロードを開始します...", vim.log.levels.INFO)
+    vim.notify("[md-preview] " .. tr("Binary not found. Downloading...", "バイナリが見つかりません。ダウンロードを開始します..."), vim.log.levels.INFO)
     M.install({
       missing_only = true,
       on_done = function(ok)
         if not ok then
           vim.notify(
-            "[md-preview] 自動ダウンロード失敗。手動でインストールしてください:\n:MdPreviewInstall",
+            "[md-preview] " .. tr("Automatic download failed. Install it with:\n:MdPreviewInstall",
+              "自動ダウンロード失敗。手動でインストールしてください:\n:MdPreviewInstall"),
             vim.log.levels.ERROR
           )
         elseif vim.api.nvim_buf_is_valid(buf) then
@@ -499,13 +506,13 @@ function M.start()
         local urls = vim.tbl_map(function(ip)
           return string.format("  http://%s:%d/?token=%s", ip, port, state.token)
         end, lan)
-        vim.notify("[md-preview] LAN から開く URL:\n" .. table.concat(urls, "\n"), vim.log.levels.INFO)
+        vim.notify("[md-preview] " .. tr("Open from your LAN:", "LAN から開く URL:") .. "\n" .. table.concat(urls, "\n"), vim.log.levels.INFO)
       end
     end
     if M.config.auto_open then
       M._open_browser(url)
     end
-    vim.notify("[md-preview] プレビュー開始: " .. url, vim.log.levels.INFO)
+    vim.notify("[md-preview] " .. tr("Preview started: %s", "プレビュー開始: %s", url), vim.log.levels.INFO)
   end, 300)
 end
 
@@ -553,7 +560,7 @@ function M.stop()
     state.update_timer:close()
     state.update_timer = nil
   end
-  vim.notify("[md-preview] プレビュー停止", vim.log.levels.INFO)
+  vim.notify("[md-preview] " .. tr("Preview stopped", "プレビュー停止"), vim.log.levels.INFO)
 end
 
 --- Git 差分の表示を切り替える（:MdPreviewDiff [base|off]）
@@ -569,8 +576,9 @@ function M.toggle_diff(base)
   end
   state.git_base = {}  -- HEAD などが変わっているかもしれないので取り直す
   if state.buf_id then send_diff(state.buf_id) end
-  vim.notify("[md-preview] Git 差分表示: "
-    .. (M.config.git_diff and ("ON（" .. M.config.git_diff_base .. " と比較）") or "OFF"), vim.log.levels.INFO)
+  vim.notify("[md-preview] " .. (M.config.git_diff
+    and tr("Git diff: ON (against %s)", "Git 差分表示: ON（%s と比較）", M.config.git_diff_base)
+    or tr("Git diff: OFF", "Git 差分表示: OFF")), vim.log.levels.INFO)
 end
 
 --- :MdPreviewDiff の補完候補（off / HEAD / staged / ブランチ・タグ）
@@ -610,7 +618,7 @@ function M._open_link(path)
     end
   end
   if vim.fn.filereadable(target) == 0 then
-    vim.notify("[md-preview] ファイルが見つかりません: " .. path, vim.log.levels.WARN)
+    vim.notify("[md-preview] " .. tr("File not found: %s", "ファイルが見つかりません: %s", path), vim.log.levels.WARN)
     return
   end
   local win = vim.fn.bufwinid(buf)
@@ -626,18 +634,20 @@ M.export_formats = { "pdf", "docx", "html", "epub", "markdown" }
 function M.export(format, path)
   format = (format or ""):lower()
   if not vim.tbl_contains(M.export_formats, format) then
-    vim.notify("[md-preview] 未対応の形式です: " .. format
-      .. "（" .. table.concat(M.export_formats, " / ") .. "）", vim.log.levels.ERROR)
+    vim.notify("[md-preview] " .. tr("Unsupported format: %s (%s)", "未対応の形式です: %s（%s）",
+      format, table.concat(M.export_formats, " / ")), vim.log.levels.ERROR)
     return
   end
   if state.chan_id == nil or state.buf_id == nil then
-    vim.notify("[md-preview] プレビューが起動していません。先に :MdPreview を実行してください", vim.log.levels.ERROR)
+    vim.notify("[md-preview] " .. tr("The preview is not running. Run :MdPreview first",
+      "プレビューが起動していません。先に :MdPreview を実行してください"), vim.log.levels.ERROR)
     return
   end
   if path == nil or path == "" then
     local name = vim.api.nvim_buf_get_name(state.buf_id)
     if name == "" then
-      vim.notify("[md-preview] 保存先を指定してください: :MdPreviewExport " .. format .. " <path>", vim.log.levels.ERROR)
+      vim.notify("[md-preview] " .. tr("Specify where to save: :MdPreviewExport %s <path>",
+        "保存先を指定してください: :MdPreviewExport %s <path>", format), vim.log.levels.ERROR)
       return
     end
     local ext = format == "markdown" and "md" or format
@@ -646,16 +656,16 @@ function M.export(format, path)
   path = vim.fn.fnamemodify(vim.fn.expand(path), ":p")
   -- 最新のバッファ内容を送ってから変換する（未保存の変更も含める）
   send_update(state.buf_id)
-  vim.notify("[md-preview] " .. format:upper() .. " に変換中...", vim.log.levels.INFO)
+  vim.notify("[md-preview] " .. tr("Converting to %s...", "%s に変換中...", format:upper()), vim.log.levels.INFO)
   pcall(vim.rpcnotify, state.chan_id, "md_preview_export", format, path)
 end
 
 --- エクスポート完了通知（バイナリから nvim_exec_lua 経由で呼ばれる）
 function M._on_export_done(ok, path, err)
   if ok then
-    vim.notify("[md-preview] ✅ 保存しました: " .. path, vim.log.levels.INFO)
+    vim.notify("[md-preview] ✅ " .. tr("Saved: %s", "保存しました: %s", path), vim.log.levels.INFO)
   else
-    vim.notify("[md-preview] ❌ エクスポートに失敗しました\n" .. (err or ""), vim.log.levels.ERROR)
+    vim.notify("[md-preview] ❌ " .. tr("Export failed", "エクスポートに失敗しました") .. "\n" .. (err or ""), vim.log.levels.ERROR)
   end
 end
 
@@ -733,7 +743,7 @@ end
 local function download_async(item, url, dest, on_done)
   local cmd = download_cmd(url, dest)
   if not cmd then
-    return on_done(false, "curl / wget / PowerShell のいずれかが必要です")
+    return on_done(false, tr("curl, wget or PowerShell is required", "curl / wget / PowerShell のいずれかが必要です"))
   end
   item.tmp, item.pct = dest, nil
   local last_err, tail = "", ""
@@ -758,7 +768,7 @@ local function download_async(item, url, dest, on_done)
     end,
   })
   if job <= 0 then
-    on_done(false, "ダウンロードプロセスを起動できません: " .. cmd[1])
+    on_done(false, tr("Cannot start the download process: %s", "ダウンロードプロセスを起動できません: %s", cmd[1]))
   end
 end
 
@@ -790,7 +800,7 @@ local function install_item(item, install_dir, is_win, on_done)
       item.status = "done"
       on_done()
     else
-      fail("実行できません: " .. item.dest)
+      fail(tr("Not executable: %s", "実行できません: %s", item.dest))
     end
   end
 
@@ -853,7 +863,7 @@ end
 function M.install(opts)
   opts = opts or {}
   if M._installing then
-    vim.notify("[md-preview] インストール実行中です", vim.log.levels.WARN)
+    vim.notify("[md-preview] " .. tr("Installation already in progress", "インストール実行中です"), vim.log.levels.WARN)
     return false
   end
 
@@ -925,7 +935,8 @@ function M.install(opts)
       level = vim.log.levels.ERROR
     end
     vim.api.nvim_echo({ { "" } }, false, {})
-    vim.notify("[md-preview] インストール" .. (level == vim.log.levels.INFO and "完了" or "結果")
+    vim.notify("[md-preview] " .. (level == vim.log.levels.INFO and tr("Installation complete", "インストール完了")
+      or tr("Installation result", "インストール結果"))
       .. "\n" .. table.concat(lines, "\n"), level)
     finished = true
     if opts.on_done then opts.on_done(result) end
@@ -958,6 +969,7 @@ end
 --- セットアップ関数（lazy.nvim などから呼ぶ）
 function M.setup(opts)
   M.config = vim.tbl_deep_extend("force", M.config, opts or {})
+  i18n.setting = M.config.lang
   M._initialized = true
 end
 
