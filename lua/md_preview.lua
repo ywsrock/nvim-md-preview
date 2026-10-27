@@ -284,13 +284,17 @@ function M.install()
     cmd = string.format('wget -q -O "%s" "%s"', binary, url)
   else
     vim.notify("[md-preview] curl または wget が必要です", vim.log.levels.ERROR)
-    return false
+    return M._build_from_source()
   end
 
   local result = vim.fn.system(cmd)
   if vim.v.shell_error ~= 0 then
-    vim.notify("[md-preview] ダウンロード失敗:\n" .. (result or ""), vim.log.levels.ERROR)
-    return false
+    vim.notify(
+      "[md-preview] リリースバイナリのダウンロードに失敗しました。\n"
+      .. "ソースからビルドを試みます（cargo が必要です）...",
+      vim.log.levels.WARN
+    )
+    return M._build_from_source()
   end
 
   -- 実行権限を付与（Unix のみ）
@@ -300,6 +304,51 @@ function M.install()
 
   M.config.binary = binary
   vim.notify("[md-preview] インストール完了: " .. binary, vim.log.levels.INFO)
+  return true
+end
+
+--- cargo を使ってソースからビルドする（リリースバイナリがない場合のフォールバック）
+function M._build_from_source()
+  if vim.fn.executable("cargo") == 0 then
+    vim.notify(
+      "[md-preview] ビルド失敗: cargo がインストールされていません。\n"
+      .. "Rust をインストールするか、:MdPreviewInstall でリリースバイナリを取得してください。\n"
+      .. "Rust インストール: https://rustup.rs",
+      vim.log.levels.ERROR
+    )
+    return false
+  end
+
+  local plugin_dir = _plugin_dir
+  vim.notify("[md-preview] cargo build --release を実行中...", vim.log.levels.INFO)
+
+  -- download-libs.sh が必要（JS ライブラリを埋め込むため）
+  local lib_dir = plugin_dir .. "/src/embedded_lib"
+  if vim.fn.isdirectory(lib_dir) == 0 then
+    vim.notify("[md-preview] JS ライブラリをダウンロード中...", vim.log.levels.INFO)
+    local dl_script = plugin_dir .. "/download-libs.sh"
+    if vim.fn.filereadable(dl_script) == 1 then
+      vim.fn.system('bash "' .. dl_script .. '"')
+      if vim.v.shell_error ~= 0 then
+        vim.notify("[md-preview] ライブラリのダウンロードに失敗しました", vim.log.levels.ERROR)
+        return false
+      end
+    end
+  end
+
+  local build_result = vim.fn.system(
+    string.format('cd "%s" && cargo build --release 2>&1', plugin_dir)
+  )
+  if vim.v.shell_error ~= 0 then
+    vim.notify("[md-preview] ビルド失敗:\n" .. build_result, vim.log.levels.ERROR)
+    return false
+  end
+
+  local is_win = vim.fn.has("win32") == 1
+  local ext = is_win and ".exe" or ""
+  local built_binary = plugin_dir .. "/target/release/nvim-md-preview" .. ext
+  M.config.binary = built_binary
+  vim.notify("[md-preview] ビルド完了: " .. built_binary, vim.log.levels.INFO)
   return true
 end
 
