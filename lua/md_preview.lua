@@ -59,8 +59,9 @@ local function send_scroll(buf)
   if state.chan_id == nil then return end
   local line  = vim.api.nvim_win_get_cursor(0)[1]
   local total = vim.api.nvim_buf_line_count(buf)
-  -- chan_id が無効になっている場合（バイナリ終了後）はエラーを無視
-  pcall(vim.rpcnotify, state.chan_id, "md_preview_scroll", line, total)
+  -- Windows では整数型を明示（msgpack で正しく符号なし整数として送る）
+  pcall(vim.rpcnotify, state.chan_id, "md_preview_scroll",
+    math.floor(line), math.floor(total))
 end
 
 --- バッファの変更イベントを購読する
@@ -86,8 +87,9 @@ local function attach_buffer(buf)
     buffer = buf,
     group  = vim.api.nvim_create_augroup("md_preview_scroll_" .. buf, { clear = true }),
     callback = function()
+      -- vim.schedule で非同期実行（chan_id が設定される前に呼ばれても安全）
       vim.schedule(function()
-        if state.buf_id == buf then
+        if state.chan_id ~= nil and state.buf_id == buf then
           send_scroll(buf)
         end
       end)

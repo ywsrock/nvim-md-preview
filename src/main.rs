@@ -137,8 +137,13 @@ async fn handle_update(state: &AppState, params: &[rmpv::Value]) {
 
 /// `md_preview_scroll` 処理
 fn handle_scroll(state: &AppState, params: &[rmpv::Value]) {
-    let line  = params.first().and_then(|v| v.as_u64()).unwrap_or(1);
-    let total = params.get(1).and_then(|v| v.as_u64()).unwrap_or(1);
+    // Neovim は整数を符号付き(i64)または符号なし(u64)で送る場合がある
+    let line = params.first()
+        .and_then(|v| v.as_u64().or_else(|| v.as_i64().map(|n| n.max(1) as u64)))
+        .unwrap_or(1);
+    let total = params.get(1)
+        .and_then(|v| v.as_u64().or_else(|| v.as_i64().map(|n| n.max(1) as u64)))
+        .unwrap_or(1);
     let payload = serde_json::json!({
         "type": "scroll", "line": line, "total": total,
     }).to_string();
