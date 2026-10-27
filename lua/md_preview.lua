@@ -1,4 +1,4 @@
--- plugin/md_preview.lua
+-- lua/md_preview.lua
 -- Neovim 側のグルーコード
 -- Rust バイナリを起動し、バッファ変更を RPC 経由で送る
 
@@ -23,6 +23,11 @@ local state = {
   buf_id       = nil,  -- 監視中のバッファ ID
   actual_port  = nil,  -- サーバーが実際に使用しているポート（ポート競合時に変わる）
 }
+
+--- プレビューが実行中かどうか
+function M._is_running()
+  return state.job_id ~= nil
+end
 
 --- バッファ全文を文字列として取得する
 local function get_buf_content(buf)

@@ -2,8 +2,6 @@
 
 Neovim 用 Markdown プレビュープラグイン。Rust 製のローカル HTTP サーバーでブラウザにリアルタイムプレビューを提供します。
 
-![preview](https://github.com/ywsrock/nvim-md-preview/assets/preview.png)
-
 ## 特徴
 
 - ⚡ リアルタイムプレビュー（WebSocket）
@@ -18,6 +16,7 @@ Neovim 用 Markdown プレビュープラグイン。Rust 製のローカル HTT
 - 📦 YAML front matter パネル表示
 - 🖼️ 相対パス画像の自動解決
 - 📡 オフライン完全動作（JS/CSS をバイナリに埋め込み済み）
+- 🔌 ポート競合時は自動で空きポートを使用
 
 ## 動作環境
 
@@ -25,14 +24,30 @@ Neovim 用 Markdown プレビュープラグイン。Rust 製のローカル HTT
 |---|---|
 | Linux | ✅ |
 | macOS (Intel / Apple Silicon) | ✅ |
+| Windows ネイティブ | ✅ |
 | Windows (WSL) | ✅ |
-| Windows ネイティブ | ❌（WSL 推奨） |
 
 ---
 
 ## インストール
 
-### lazy.nvim（推奨）
+### Vundle（markdown-preview.nvim と同様の方式）
+
+`~/.config/nvim/plugin/plugins.vim` に追加:
+
+```vim
+Plugin 'ywsrock/nvim-md-preview'
+```
+
+`:PluginInstall` 後に Vim 内で実行:
+
+```vim
+:MdPreviewInstall
+```
+
+または初回 `:MarkdownPreview` 実行時に自動ダウンロードします。
+
+### lazy.nvim
 
 ```lua
 {
@@ -45,23 +60,17 @@ Neovim 用 Markdown プレビュープラグイン。Rust 製のローカル HTT
 }
 ```
 
-### Vundle
-
-```vim
-" ~/.config/nvim/init.vim の Plugin 定義に追加
-Plugin 'ywsrock/nvim-md-preview'
-```
-
-`:PluginInstall` 後、初回の `:MdPreview` 実行時にバイナリを自動ダウンロードします。
-または手動で `:MdPreviewInstall` を実行してください。
-
 ### vim-plug
 
 ```vim
 Plug 'ywsrock/nvim-md-preview'
 ```
 
-`:PlugInstall` 後、`:MdPreviewInstall` を実行してください。
+`:PlugInstall` 後:
+
+```vim
+:MdPreviewInstall
+```
 
 ### packer.nvim
 
@@ -69,9 +78,6 @@ Plug 'ywsrock/nvim-md-preview'
 use {
   "ywsrock/nvim-md-preview",
   run = ":MdPreviewInstall",
-  config = function()
-    require("md_preview").setup()
-  end,
 }
 ```
 
@@ -82,20 +88,35 @@ use {
 Markdown ファイルを開いて:
 
 ```vim
-:MdPreview        " プレビュー開始（ブラウザが自動で開く）
-:MdPreviewStop    " プレビュー停止
-:MdPreviewInstall " バイナリを手動でダウンロード
+:MarkdownPreview        " プレビュー開始（markdown-preview.nvim と同じコマンド名）
+:MarkdownPreviewStop    " プレビュー停止
+:MarkdownPreviewToggle  " 開始/停止トグル
+
+" 短縮コマンドも使用可能
+:MdPreview
+:MdPreviewStop
+:MdPreviewInstall       " バイナリを手動ダウンロード
 ```
 
 ---
 
 ## 設定
 
+### Lua (init.lua)
+
 ```lua
 require("md_preview").setup({
-  port     = 9876,  -- HTTP サーバーのポート番号（デフォルト: 9876）
-  auto_open = true, -- プレビュー開始時に自動でブラウザを開く（デフォルト: true）
+  port      = 9876,   -- HTTP サーバーのポート番号（競合時は自動で別ポートを使用）
+  auto_open = true,   -- プレビュー開始時に自動でブラウザを開く
 })
+```
+
+### Vimscript (init.vim) — グローバル変数
+
+```vim
+" markdown-preview.nvim と同様にグローバル変数でも設定可能
+let g:md_preview_port      = 9876   " ポート番号
+let g:md_preview_auto_open = 1      " 自動でブラウザを開く（0 で無効）
 ```
 
 ---
@@ -141,7 +162,7 @@ $$
 
 ```
 Neovim (バッファ変更)
-  ↓ RPC (stdin/stdout)
+  ↓ RPC (stdin/stdout msgpack)
 Rust バイナリ
   ├── pulldown-cmark で Markdown → HTML 変換
   ├── HTTP/WebSocket サーバー (axum)
