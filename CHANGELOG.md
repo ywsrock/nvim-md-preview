@@ -2,7 +2,7 @@
 
 All notable changes are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.5.0] - 2026-10-28
 
 ### Changed
 - The Git diff view is on by default (`git_diff = true`). Files outside a Git repository show nothing and no warning.
