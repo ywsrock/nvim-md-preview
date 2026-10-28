@@ -307,7 +307,7 @@ require("md_preview").setup({
 | Option | Default | Description |
 |---|---|---|
 | `filetypes` | `{ "*" }` | File types (Neovim `filetype`) that can be previewed. `"*"` means every file. Markdown, vimwiki, Quarto, R Markdown, pandoc and MDX are rendered as documents; other files are shown as highlighted code. Special buffers (help, file explorers, terminals) are never previewed. |
-| `max_file_size` | `2097152` (2 MB) | Files larger than this, in bytes, are not previewed. Binary files are never previewed. |
+| `max_file_size` | `2097152` (2 MB) | Files larger than this, in bytes, are not previewed. Applies to every file type, Markdown included. Set `false` to remove the limit; very large files make every update slower. Binary files are never previewed. |
 | `port` | `9876` | Port of the preview server. If it is taken, the next free port is used. |
 | `host` | `"127.0.0.1"` | Address to listen on. `"0.0.0.0"` lets other devices on your LAN open the preview; a token is then required (see "Follow along on a tablet" in [Recipes](#recipes)). |
 | `auto_open` | `true` | Open the browser when the preview starts. |
@@ -366,7 +366,7 @@ Without `setup()`, these variables are read when the plugin loads:
 ```lua
 require("md_preview").setup({
   filetypes = { "*" },
-  max_file_size = 2 * 1024 * 1024,
+  max_file_size = 2 * 1024 * 1024, -- false: no limit
   binary = vim.fn.stdpath("data") .. "/nvim-md-preview/nvim-md-preview",
   port = 9876,
   host = "127.0.0.1",

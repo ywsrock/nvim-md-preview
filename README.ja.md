@@ -307,7 +307,7 @@ require("md_preview").setup({
 | 設定 | 既定値 | 説明 |
 |---|---|---|
 | `filetypes` | `{ "*" }` | プレビューできるファイルの種類（Neovim の `filetype`）。`"*"` はすべてのファイル。Markdown・vimwiki・Quarto・R Markdown・pandoc・MDX は文書として描画し、それ以外はハイライトしたコードとして表示します。特殊なバッファ（ヘルプ・ファイラー・ターミナル）は対象外です。 |
-| `max_file_size` | `2097152`（2 MB） | これより大きいファイル（バイト）は表示しません。バイナリのファイルは常に表示しません。 |
+| `max_file_size` | `2097152`（2 MB） | これより大きいファイル（バイト）は表示しません。Markdown を含むすべての種類のファイルに効きます。`false` にすると上限をなくせますが、とても大きなファイルでは更新のたびに重くなります。バイナリのファイルは常に表示しません。 |
 | `port` | `9876` | プレビューのサーバーのポート。使用中なら次の空きポートを使います。 |
 | `host` | `"127.0.0.1"` | 待ち受けるアドレス。`"0.0.0.0"` にすると LAN 内の別端末から見られます。その場合はトークンが必要になります（[レシピ](#レシピ)の「タブレットで一緒に見る」を参照）。 |
 | `auto_open` | `true` | プレビューの開始時にブラウザを開きます。 |
@@ -366,7 +366,7 @@ require("md_preview").setup({
 ```lua
 require("md_preview").setup({
   filetypes = { "*" },
-  max_file_size = 2 * 1024 * 1024,
+  max_file_size = 2 * 1024 * 1024, -- false で上限なし
   binary = vim.fn.stdpath("data") .. "/nvim-md-preview/nvim-md-preview",
   port = 9876,
   host = "127.0.0.1",

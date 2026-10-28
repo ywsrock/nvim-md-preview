@@ -93,8 +93,9 @@ Call `require("md_preview").setup(opts)`. All keys are optional; defaults:
         (help, file explorers, terminals) are never previewed.
 
     max_file_size                                *md-preview-max_file_size*
-        `2097152` (2 MB). Larger files are not previewed. Binary files are
-        never previewed.
+        `2097152` (2 MB). Larger files, of any file type, are not
+        previewed. `false` removes the limit; very large files make every
+        update slower. Binary files are never previewed.
 
     port                                                  *md-preview-port*
         `9876`. If it is taken, the next free port is used.
