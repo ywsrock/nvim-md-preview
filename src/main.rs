@@ -3,6 +3,7 @@ mod assets;
 mod export;
 mod markdown;
 mod page;
+mod plantuml;
 mod server;
 mod state;
 
@@ -189,6 +190,8 @@ async fn handle_config(state: &AppState, params: &[rmpv::Value]) {
     }
     *state.theme.write().await = get_str(opts, "theme").unwrap_or_else(|| "auto".to_string());
     *state.custom_css.write().await = get_str(opts, "custom_css").unwrap_or_default();
+    *state.plantuml_path.write().await = get_str(opts, "plantuml_path").filter(|s| !s.is_empty()).map(PathBuf::from);
+    *state.plantuml_server.write().await = get_str(opts, "plantuml_server").unwrap_or_default();
 
     if let Some(ex) = get(opts, "export") {
         let mut eo = state.export_opts.write().await;

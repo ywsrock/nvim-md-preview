@@ -47,6 +47,12 @@ pub struct AppState {
     pub browser_path: Arc<RwLock<Option<PathBuf>>>,
     /// Typst のパッケージ（cmarker）を置いたディレクトリ。あればネットワークに取りに行かない
     pub typst_packages: Arc<RwLock<Option<PathBuf>>>,
+    /// plantuml コマンド（または plantuml.jar）のパス。無ければローカルでは描かない
+    pub plantuml_path: Arc<RwLock<Option<PathBuf>>>,
+    /// PlantUML サーバーの URL。設定されたときだけサーバーで描く（空なら使わない）
+    pub plantuml_server: Arc<RwLock<String>>,
+    /// PlantUML の描画結果のキャッシュ
+    pub plantuml_cache: Arc<crate::plantuml::PlantumlCache>,
 }
 
 /// サーバーへのアクセス制御
@@ -119,6 +125,9 @@ impl AppState {
             port: Arc::new(std::sync::atomic::AtomicU16::new(0)),
             browser_path: Arc::new(RwLock::new(None)),
             typst_packages: Arc::new(RwLock::new(None)),
+            plantuml_path: Arc::new(RwLock::new(None)),
+            plantuml_server: Arc::new(RwLock::new(String::new())),
+            plantuml_cache: Arc::new(Default::default()),
         }
     }
 

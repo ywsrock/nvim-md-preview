@@ -112,6 +112,9 @@ jobs:
           cache: npm
           cache-dependency-path: tests/e2e/package-lock.json
 
+      - name: Install PlantUML
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends plantuml
+
       - name: Check preview script syntax
         run: node --check src/preview/app.js
 

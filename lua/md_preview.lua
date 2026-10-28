@@ -48,6 +48,11 @@ M.config = {
   git_diff_base = "HEAD",
   -- 差分の色をエディタ（gitsigns / DiffAdd など）に合わせる
   git_diff_colors = true,
+  -- PlantUML（```plantuml / ```puml）を描く plantuml コマンドか plantuml.jar。空なら PATH 上の plantuml を使う
+  plantuml_path = "",
+  -- PlantUML サーバーの URL（例: "https://www.plantuml.com/plantuml"）。設定したときだけ、
+  --   図のソースをこのサーバーに送って描く。空ならサーバーは使わない
+  plantuml_server = "",
 
   -- エクスポート設定
   export = {
@@ -369,6 +374,22 @@ function M._pdf_engine()
 end
 
 --- エクスポートエンジンのパスを解決してバイナリに送る
+--- PlantUML を描くコマンド（plantuml_path、無ければ PATH 上の plantuml）。見つからなければ nil
+function M._find_plantuml()
+  local configured = M.config.plantuml_path
+  if configured ~= "" then
+    local path = vim.fn.fnamemodify(vim.fn.expand(configured), ":p")
+    if path:match("%.jar$") then
+      return vim.fn.filereadable(path) == 1 and path or nil
+    end
+    return vim.fn.executable(configured) == 1 and vim.fn.exepath(configured) or nil
+  end
+  if vim.fn.executable("plantuml") == 1 then
+    return vim.fn.exepath("plantuml")
+  end
+  return nil
+end
+
 local function send_export_config()
   if state.chan_id == nil then return end
 
@@ -413,6 +434,8 @@ local function send_export_config()
     wiki_links = M.config.wiki_links,
     browser_keys = M.config.browser_keys,
     export_formats = M.config.export.formats,
+    plantuml_path = M._find_plantuml() or "",
+    plantuml_server = M.config.plantuml_server,
     export = {
       pdf_engine = ex.pdf_engine,
       browser_path = ex.pdf_engine == "browser" and (M._find_browser() or "") or "",

@@ -141,6 +141,29 @@ local function check_export(config)
   end
 end
 
+--- PlantUML（```plantuml のコードブロック）
+local function check_plantuml(config)
+  h.start("PlantUML")
+  if config.plantuml_server ~= nil and config.plantuml_server ~= "" then
+    h.ok("Server: " .. config.plantuml_server)
+    h.info("Diagram sources are sent to this server")
+    return
+  end
+  local path = require("md_preview")._find_plantuml()
+  if not path then
+    h.info("plantuml not found (PlantUML blocks are shown as code)")
+    h.info("To render them, install PlantUML (brew install plantuml, apt install plantuml), "
+      .. "or set plantuml_path, or set plantuml_server")
+    return
+  end
+  h.ok("plantuml: " .. path)
+  if path:match("%.jar$") then
+    if vim.fn.executable("java") ~= 1 then
+      h.warn("java not found (needed to run " .. path .. ")", { "Install a Java runtime" })
+    end
+  end
+end
+
 --- ダウンロード手段（:MdPreviewInstall で使う）
 local function check_download_tools()
   h.start("Download tools")
@@ -222,6 +245,7 @@ function M.check()
   check_nvim()
   check_binary(config)
   check_export(config)
+  check_plantuml(config)
   check_download_tools()
   check_browser_opener(config)
   check_port(config)

@@ -88,6 +88,8 @@ use { "ywsrock/nvim-md-preview", run = ":MdPreviewInstall" }
 
 Mermaid の図、KaTeX の数式、190 言語のシンタックスハイライトをバイナリに内蔵しているので、ネットワークから何も取得しません。
 
+PlantUML のブロック（` ```plantuml ` か ` ```puml `）は、ローカルに `plantuml` コマンドがあればそれで描きます。PlantUML サーバーで描きたい場合は `plantuml_server` を設定します。図のソースがサーバーに送られるのは、これを設定したときだけです。
+
 <table>
 <tr>
 <td width="50%" valign="top">
@@ -333,6 +335,13 @@ require("md_preview").setup({
 | `git_diff_base` | `"HEAD"` | 比較の基準：`"HEAD"`、`"staged"`（ステージ済みの内容）、ブランチ・タグ・コミット。`:MdPreviewDiff <基準>` でその場だけ変えられます。 |
 | `git_diff_colors` | `true` | 差分の色をエディタ（`GitSignsAdd`、`Added`、`DiffAdd` など）に合わせます。プレビューのテーマで読みにくい色の場合は、緑・黄・赤を使います。 |
 
+### PlantUML
+
+| オプション | 既定値 | 説明 |
+|---|---|---|
+| `plantuml_path` | `""` | ` ```plantuml ` と ` ```puml ` のブロックを描く `plantuml` コマンド、または `plantuml.jar`（`java -jar` で実行）。空なら `PATH` 上の `plantuml` を使います。見つからなければコードのまま表示します。 |
+| `plantuml_server` | `""` | PlantUML サーバーの URL（例: `"https://www.plantuml.com/plantuml"`）。設定すると `plantuml` を実行せず、ブラウザがこのサーバーから図を読み込みます。図のソースは手元のマシンの外に出ます。空ならサーバーは使いません。 |
+
 ### 出力（`export = { ... }`）
 
 | 設定 | 既定値 | 説明 |
@@ -383,6 +392,9 @@ require("md_preview").setup({
   git_diff = true,
   git_diff_base = "HEAD",
   git_diff_colors = true,
+
+  plantuml_path = "",
+  plantuml_server = "",
 
   export = {
     formats = { "pdf", "docx", "html", "epub", "markdown" },
@@ -449,7 +461,7 @@ Vimium、Vimium C、Tridactyl、Surfingkeys など、ブラウザに Vim 風の�
 
 ### 文書がどこかに送られることはありますか？
 
-ありません。サーバーは `127.0.0.1` でのみ待ち受け、必要なものはすべてバイナリに入っています。[セキュリティ](#セキュリティ)を見てください。
+ありません。サーバーは `127.0.0.1` でのみ待ち受け、必要なものはすべてバイナリに入っています。[セキュリティ](#セキュリティ)を見てください。例外は `plantuml_server` だけで、これを設定すると PlantUML の図のソースがそのサーバーに送られます。
 
 ## 仕組み
 

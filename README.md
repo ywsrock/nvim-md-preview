@@ -88,6 +88,8 @@ The preview keeps the block under your cursor in view, using source-line markers
 
 Mermaid diagrams, KaTeX math and syntax highlighting for 190 languages are built into the binary, so nothing is fetched from the network.
 
+PlantUML blocks (` ```plantuml ` or ` ```puml `) are drawn with your local `plantuml` command when it is installed. To use a PlantUML server instead, set `plantuml_server`; diagram sources are sent to that server only when you set it.
+
 <table>
 <tr>
 <td width="50%" valign="top">
@@ -333,6 +335,13 @@ require("md_preview").setup({
 | `git_diff_base` | `"HEAD"` | What to compare against: `"HEAD"`, `"staged"` (the index), or a branch, tag or commit. `:MdPreviewDiff <base>` changes it for the session. |
 | `git_diff_colors` | `true` | Use the editor's diff colors (`GitSignsAdd`, `Added`, `DiffAdd`, ...). Colors that are hard to read on the preview's theme fall back to green, yellow and red. |
 
+### PlantUML
+
+| Option | Default | Description |
+|---|---|---|
+| `plantuml_path` | `""` | The `plantuml` command or a `plantuml.jar` (run with `java -jar`) used for ` ```plantuml ` and ` ```puml ` blocks. Empty uses `plantuml` on `PATH`. Without it, the blocks are shown as code. |
+| `plantuml_server` | `""` | A PlantUML server URL, for example `"https://www.plantuml.com/plantuml"`. When set, the browser loads the diagrams from this server instead of running `plantuml`, so the diagram sources leave your machine. Empty never uses a server. |
+
 ### Export (`export = { ... }`)
 
 | Option | Default | Description |
@@ -383,6 +392,9 @@ require("md_preview").setup({
   git_diff = true,
   git_diff_base = "HEAD",
   git_diff_colors = true,
+
+  plantuml_path = "",
+  plantuml_server = "",
 
   export = {
     formats = { "pdf", "docx", "html", "epub", "markdown" },
@@ -449,7 +461,7 @@ The extension usually receives the key first, so the preview never sees it. You 
 
 ### Does it send my documents anywhere?
 
-No. The server listens on `127.0.0.1` only, and everything it needs is inside the binary. See [Security](#security).
+No. The server listens on `127.0.0.1` only, and everything it needs is inside the binary. See [Security](#security). The only exception is `plantuml_server`: if you set it, PlantUML diagram sources are sent to that server.
 
 ## How it works
 
