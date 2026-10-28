@@ -35,7 +35,6 @@ Install the plugin with your plugin manager, then run |:MdPreviewInstall|.
 With lazy.nvim: >lua
     {
       "ywsrock/nvim-md-preview",
-      ft = "markdown",
       build = ":MdPreviewInstall",
       config = function() require("md_preview").setup({}) end,
     }
@@ -85,6 +84,17 @@ tools and how the browser is opened.
 4. CONFIGURATION                                   *md-preview-configuration*
 
 Call `require("md_preview").setup(opts)`. All keys are optional; defaults:
+
+    filetypes                                        *md-preview-filetypes*
+        `{ "*" }`. File types (|'filetype'|) that can be previewed; `"*"`
+        means every file. Markdown, vimwiki, Quarto, R Markdown, pandoc
+        and MDX are rendered as documents; other files are shown as
+        highlighted code with line numbers. Buffers with a 'buftype'
+        (help, file explorers, terminals) are never previewed.
+
+    max_file_size                                *md-preview-max_file_size*
+        `2097152` (2 MB). Larger files are not previewed. Binary files are
+        never previewed.
 
     port                                                  *md-preview-port*
         `9876`. If it is taken, the next free port is used.

@@ -9,6 +9,7 @@ All notable changes are documented here. This project follows [Semantic Versioni
 - `:MdPreviewInstall` downloads Typst only when PDFs will be made with Typst.
 
 ### Added
+- Any text file can be previewed. `filetypes` (default `{ "*" }`) selects the file types; Markdown, vimwiki, Quarto, R Markdown, pandoc and MDX are rendered as documents and every other file is shown as highlighted code with line numbers, with scroll sync, click-to-jump, search and the Git diff. Special buffers (help, file explorers, terminals), binary files and files over `max_file_size` (2 MB) are skipped. Export stays Markdown-only.
 - `export.browser_path` to choose the browser used for PDFs; `:checkhealth md_preview` shows which one is used.
 - The Typst package used for PDFs (cmarker) is bundled with the release and installed by `:MdPreviewInstall`, so Typst no longer downloads it on the first export.
 

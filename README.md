@@ -31,7 +31,6 @@ With [lazy.nvim](https://github.com/folke/lazy.nvim):
 ```lua
 {
   "ywsrock/nvim-md-preview",
-  ft = "markdown",
   build = ":MdPreviewInstall",
   config = function()
     require("md_preview").setup({})
@@ -39,7 +38,7 @@ With [lazy.nvim](https://github.com/folke/lazy.nvim):
 }
 ```
 
-Open a Markdown file and run `:MarkdownPreview`. That's it.
+Open a Markdown file, or any text file, and run `:MarkdownPreview`. That's it. The plugin only defines its commands at startup; the rest loads when you use them.
 
 <details>
 <summary>vim-plug, packer.nvim</summary>
@@ -123,6 +122,10 @@ Mermaid diagrams, KaTeX math and syntax highlighting for 190 languages are built
 
 Changes against `HEAD` are shown as soon as you edit a file in a Git repository, unsaved edits included. `:MdPreviewDiff main` compares with a branch instead, `:MdPreviewDiff staged` with the index, and `:MdPreviewDiff off` hides it. Changed words are underlined or struck through in place, tables and math show the previous version in a collapsed box, removed paragraphs stay visible, and ↑ / ↓ in the header jump from change to change. The markers beside the scrollbar show where the changes are.
 
+### Any file, not just Markdown
+
+Markdown, vimwiki, Quarto, R Markdown and MDX files are rendered as documents. Every other text file is shown as highlighted code with line numbers, and scroll sync, click-to-jump, search and the Git diff work the same way. Help, file explorers, terminals and other special buffers are skipped, and so are binary files and files over 2 MB. Limit the file types with `filetypes`, for example `{ "markdown", "vimwiki" }`.
+
 ### Find your way in long documents
 
 <picture>
@@ -174,12 +177,12 @@ Open the table of contents with `t` and search with `/` or Ctrl+F. The current s
 ```lua
 {
   "ywsrock/nvim-md-preview",
-  ft = "markdown",
+  lazy = false, -- keep the commands available in every buffer (keys alone would lazy-load)
   build = ":MdPreviewInstall",
   config = function() require("md_preview").setup({}) end,
   keys = {
-    { "<leader>mp", "<cmd>MarkdownPreviewToggle<cr>", ft = "markdown", desc = "Markdown: preview" },
-    { "<leader>md", "<cmd>MdPreviewDiff<cr>", ft = "markdown", desc = "Markdown: Git diff" },
+    { "<leader>mp", "<cmd>MarkdownPreviewToggle<cr>", desc = "Markdown: preview" },
+    { "<leader>md", "<cmd>MdPreviewDiff<cr>", desc = "Markdown: Git diff" },
     {
       "<leader>me",
       function()
@@ -187,7 +190,6 @@ Open the table of contents with `t` and search with `/` or Ctrl+F. The current s
           if format then vim.cmd("MdPreviewExport " .. format) end
         end)
       end,
-      ft = "markdown",
       desc = "Markdown: export",
     },
   },
@@ -304,6 +306,8 @@ require("md_preview").setup({
 
 | Option | Default | Description |
 |---|---|---|
+| `filetypes` | `{ "*" }` | File types (Neovim `filetype`) that can be previewed. `"*"` means every file. Markdown, vimwiki, Quarto, R Markdown, pandoc and MDX are rendered as documents; other files are shown as highlighted code. Special buffers (help, file explorers, terminals) are never previewed. |
+| `max_file_size` | `2097152` (2 MB) | Files larger than this, in bytes, are not previewed. Binary files are never previewed. |
 | `port` | `9876` | Port of the preview server. If it is taken, the next free port is used. |
 | `host` | `"127.0.0.1"` | Address to listen on. `"0.0.0.0"` lets other devices on your LAN open the preview; a token is then required (see "Follow along on a tablet" in [Recipes](#recipes)). |
 | `auto_open` | `true` | Open the browser when the preview starts. |
@@ -361,6 +365,8 @@ Without `setup()`, these variables are read when the plugin loads:
 
 ```lua
 require("md_preview").setup({
+  filetypes = { "*" },
+  max_file_size = 2 * 1024 * 1024,
   binary = vim.fn.stdpath("data") .. "/nvim-md-preview/nvim-md-preview",
   port = 9876,
   host = "127.0.0.1",

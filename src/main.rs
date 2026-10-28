@@ -108,6 +108,9 @@ async fn handle_update(state: &AppState, params: &[rmpv::Value]) {
     let title        = params.get(1).and_then(|v| v.as_str()).unwrap_or("md Preview");
     let base_dir_str = params.get(2).and_then(|v| v.as_str()).unwrap_or("");
     let file_path_str = params.get(3).and_then(|v| v.as_str()).unwrap_or("");
+    // 表示の仕方（"markdown" | "code"）と filetype。古い Lua から来た場合は Markdown として扱う
+    let kind = params.get(4).and_then(|v| v.as_str()).unwrap_or("markdown");
+    let filetype = params.get(5).and_then(|v| v.as_str()).unwrap_or("");
 
     if !base_dir_str.is_empty() {
         *state.base_dir.write().await = Some(PathBuf::from(base_dir_str));
@@ -119,6 +122,20 @@ async fn handle_update(state: &AppState, params: &[rmpv::Value]) {
     }
 
     *state.current_content.write().await = Some(content.to_string());
+    *state.view_kind.write().await = kind.to_string();
+
+    // Markdown 以外は描画せず、元のテキストを渡す（ブラウザ側で行番号とハイライトを付ける）
+    if kind == "code" {
+        let payload = serde_json::json!({
+            "type": "content",
+            "kind": "code",
+            "title": title,
+            "text": content,
+            "lang": filetype,
+        }).to_string();
+        state.update_html(payload).await;
+        return;
+    }
 
     let (front_matter, body) = markdown::extract_front_matter(content);
     let line_offset = markdown::front_matter_line_count(front_matter.as_deref());
@@ -127,6 +144,7 @@ async fn handle_update(state: &AppState, params: &[rmpv::Value]) {
 
     let payload = serde_json::json!({
         "type": "content",
+        "kind": "markdown",
         "title": title,
         "html": html,
         "front_matter": front_matter,
@@ -221,13 +239,21 @@ async fn handle_export(state: &AppState, params: &[rmpv::Value]) {
 async fn handle_diff(state: &AppState, params: &[rmpv::Value]) {
     let num = |v: Option<&rmpv::Value>| v.and_then(|v| v.as_u64().or_else(|| v.as_i64().map(|n| n.max(0) as u64)));
     let render_opts = *state.render_opts.read().await;
+    let is_code = *state.view_kind.read().await == "code";
     let hunks: Vec<serde_json::Value> = params.first()
         .and_then(|v| v.as_array())
         .map(|arr| arr.iter().filter_map(|h| {
             let h = h.as_array()?;
             let kind = h.get(2)?.as_str()?;
             let old_md = h.get(3).and_then(|v| v.as_str()).unwrap_or("");
-            let old_html = if old_md.is_empty() { String::new() } else { markdown::to_html(old_md, 0, render_opts) };
+            // コードとして表示しているときは、変更前の内容も Markdown にせずそのまま見せる
+            let old_html = if old_md.is_empty() {
+                String::new()
+            } else if is_code {
+                format!("<pre><code>{}</code></pre>", markdown::escape_html(old_md))
+            } else {
+                markdown::to_html(old_md, 0, render_opts)
+            };
             Some(serde_json::json!({
                 "s": num(h.first())?, "e": num(h.get(1))?, "kind": kind,
                 "old_html": old_html,

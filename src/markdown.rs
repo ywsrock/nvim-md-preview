@@ -43,6 +43,10 @@ fn expand_wiki_links<'a>(text: &str) -> Vec<Event<'a>> {
     events
 }
 
+pub fn escape_html(s: &str) -> String {
+    html_escape(s)
+}
+
 fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }

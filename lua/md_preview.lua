@@ -17,6 +17,11 @@ M.config = {
   binary = vim.fn.stdpath("data") .. "/nvim-md-preview/nvim-md-preview"
     .. (vim.fn.has("win32") == 1 and ".exe" or ""),
   port = 9876,
+  -- プレビューするファイルの種類（Neovim の filetype）。"*" はすべてのファイル。
+  --   Markdown 系は Markdown として描画し、それ以外はハイライト付きのコードとして表示する
+  filetypes = { "*" },
+  -- これより大きいファイルはプレビューしない（バイト）
+  max_file_size = 2 * 1024 * 1024,
   -- 待ち受けアドレス。"0.0.0.0" にすると LAN 内の別端末（タブレットなど）から見られる。
   --   その場合は毎回ランダムなトークンを発行し、トークン付き URL でしか開けない
   host = "127.0.0.1",
@@ -112,13 +117,62 @@ local function get_buf_dir(buf)
 end
 
 --- Rust バイナリに Markdown テキストを送る
+-- Markdown として描画する filetype（それ以外はコードとして表示する）
+local MARKDOWN_FILETYPES = {
+  markdown = true, vimwiki = true, quarto = true, rmd = true, pandoc = true,
+  mdx = true, telekasten = true, ["markdown.mdx"] = true, ["markdown.pandoc"] = true,
+}
+
+--- バッファの表示の仕方: "markdown" | "code"
+function M._view_kind(buf)
+  local ft = vim.bo[buf].filetype
+  if MARKDOWN_FILETYPES[ft] or MARKDOWN_FILETYPES[ft:match("^[^.]+") or ""] then return "markdown" end
+  -- filetype が未検出でも拡張子が Markdown なら Markdown として扱う
+  local name = vim.api.nvim_buf_get_name(buf)
+  if name:match("%.md$") or name:match("%.markdown$") then return "markdown" end
+  return "code"
+end
+
+--- バッファをプレビューできるか。できなければ (false, 理由)
+--- 通常のファイルのバッファだけを対象にする（ヘルプ・ファイラー・quickfix・ターミナルなどは除く）
+function M._previewable(buf)
+  if not vim.api.nvim_buf_is_valid(buf) or vim.bo[buf].buftype ~= "" then
+    return false, "not a file buffer"
+  end
+  local name = vim.api.nvim_buf_get_name(buf)
+  if name == "" then return false, "the buffer has no file name" end
+
+  local ft = vim.bo[buf].filetype
+  local allowed = false
+  for _, f in ipairs(M.config.filetypes or {}) do
+    if f == "*" or f == ft or f == ft:match("^[^.]+") then allowed = true break end
+  end
+  if not allowed then
+    return false, string.format("filetype %q is not in filetypes", ft)
+  end
+
+  local size = vim.api.nvim_buf_get_offset(buf, vim.api.nvim_buf_line_count(buf))
+  if size > (M.config.max_file_size or math.huge) then
+    return false, string.format("the file is larger than max_file_size (%d bytes)", size)
+  end
+  -- バイナリのファイル（先頭に NUL を含む）は表示しない
+  local f = io.open(name, "rb")
+  if f then
+    local head = f:read(8192) or ""
+    f:close()
+    if head:find("\0", 1, true) then return false, "binary file" end
+  end
+  return true
+end
+
 local function send_update(buf)
   if state.chan_id == nil then return end
   local content   = get_buf_content(buf)
   local title     = get_buf_title(buf)
   local base_dir  = get_buf_dir(buf)
   local file_path = vim.api.nvim_buf_get_name(buf)  -- フルパス（エクスポート用）
-  pcall(vim.rpcnotify, state.chan_id, "md_preview_update", content, title, base_dir, file_path)
+  pcall(vim.rpcnotify, state.chan_id, "md_preview_update", content, title, base_dir, file_path,
+    M._view_kind(buf), vim.bo[buf].filetype)
 end
 
 --- 比較の基準（git_diff_base）を git show に渡す形にする
@@ -477,10 +531,9 @@ end
 --- プレビューを開始する（:MdPreview コマンドから呼び出す）
 function M.start()
   local buf = vim.api.nvim_get_current_buf()
-  local filetype = vim.bo[buf].filetype
-
-  if filetype ~= "markdown" then
-    vim.notify(string.format("[md-preview] Not a Markdown file (filetype: %s)", filetype), vim.log.levels.WARN)
+  local ok, reason = M._previewable(buf)
+  if not ok then
+    vim.notify(string.format("[md-preview] Cannot preview this buffer: %s", reason), vim.log.levels.WARN)
     return
   end
 
@@ -530,10 +583,8 @@ function M.start()
     callback = function(ev)
       if not M.config.follow_buffer or state.job_id == nil then return end
       if ev.buf == state.buf_id then return end
-      -- filetype 未検出の環境でも拡張子で判定する
-      local is_md = vim.bo[ev.buf].filetype == "markdown"
-        or ev.file:match("%.md$") ~= nil or ev.file:match("%.markdown$") ~= nil
-      if not is_md then return end
+      -- プレビューできないバッファ（特殊な画面・対象外の種類・巨大なファイル）では切り替えない
+      if not M._previewable(ev.buf) then return end
       attach_buffer(ev.buf)
       send_export_config()
       send_scroll(ev.buf)
@@ -710,6 +761,10 @@ function M.export(format, path)
   end
   if state.chan_id == nil or state.buf_id == nil then
     vim.notify("[md-preview] The preview is not running. Run :MdPreview first", vim.log.levels.ERROR)
+    return
+  end
+  if M._view_kind(state.buf_id) ~= "markdown" then
+    vim.notify("[md-preview] Export is available for Markdown files only", vim.log.levels.ERROR)
     return
   end
   if path == nil or path == "" then

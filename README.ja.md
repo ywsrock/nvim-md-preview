@@ -31,7 +31,6 @@ Neovim 0.9 以降が必要です。Vim には対応していません。
 ```lua
 {
   "ywsrock/nvim-md-preview",
-  ft = "markdown",
   build = ":MdPreviewInstall",
   config = function()
     require("md_preview").setup({})
@@ -39,7 +38,7 @@ Neovim 0.9 以降が必要です。Vim には対応していません。
 }
 ```
 
-Markdown ファイルを開いて `:MarkdownPreview` を実行するだけです。
+Markdown ファイル（またはどのテキストファイルでも）を開いて `:MarkdownPreview` を実行するだけです。起動時にはコマンドを登録するだけで、それ以外は使うときに読み込みます。
 
 <details>
 <summary>vim-plug、packer.nvim</summary>
@@ -123,6 +122,10 @@ Mermaid の図、KaTeX の数式、190 言語のシンタックスハイライ�
 
 Git のリポジトリ内のファイルを編集すると、`HEAD` との差分（未保存の編集を含む）がすぐに表示されます。`:MdPreviewDiff main` でブランチと、`:MdPreviewDiff staged` でステージ済みの内容と比較でき、`:MdPreviewDiff off` で表示を消せます。変わった語は下線や取り消し線でその場に表示され、表や数式は変更前の内容を折りたたみで、削除された段落もその場所に残ります。ヘッダーの ↑ / ↓ で変更箇所を順に移動でき、スクロールバーの横の印で変更の位置が分かります。
 
+### Markdown 以外のファイルも
+
+Markdown・vimwiki・Quarto・R Markdown・MDX のファイルは文書として描画します。それ以外のテキストファイルは、行番号付きのハイライトしたコードとして表示し、スクロールの同期・クリックでの移動・検索・Git の差分はそのまま使えます。ヘルプ・ファイラー・ターミナルなどの特殊なバッファ、バイナリのファイル、2 MB を超えるファイルは表示しません。`filetypes` で対象を絞れます（例: `{ "markdown", "vimwiki" }`）。
+
 ### 長い文書でも迷わない
 
 <picture>
@@ -174,12 +177,12 @@ Git のリポジトリ内のファイルを編集すると、`HEAD` との差分
 ```lua
 {
   "ywsrock/nvim-md-preview",
-  ft = "markdown",
+  lazy = false, -- どのバッファでもコマンドを使えるようにする（keys だけだと遅延読み込みになる）
   build = ":MdPreviewInstall",
   config = function() require("md_preview").setup({}) end,
   keys = {
-    { "<leader>mp", "<cmd>MarkdownPreviewToggle<cr>", ft = "markdown", desc = "Markdown: プレビュー" },
-    { "<leader>md", "<cmd>MdPreviewDiff<cr>", ft = "markdown", desc = "Markdown: Git の差分" },
+    { "<leader>mp", "<cmd>MarkdownPreviewToggle<cr>", desc = "Markdown: プレビュー" },
+    { "<leader>md", "<cmd>MdPreviewDiff<cr>", desc = "Markdown: Git の差分" },
     {
       "<leader>me",
       function()
@@ -187,7 +190,6 @@ Git のリポジトリ内のファイルを編集すると、`HEAD` との差分
           if format then vim.cmd("MdPreviewExport " .. format) end
         end)
       end,
-      ft = "markdown",
       desc = "Markdown: エクスポート",
     },
   },
@@ -304,6 +306,8 @@ require("md_preview").setup({
 
 | 設定 | 既定値 | 説明 |
 |---|---|---|
+| `filetypes` | `{ "*" }` | プレビューできるファイルの種類（Neovim の `filetype`）。`"*"` はすべてのファイル。Markdown・vimwiki・Quarto・R Markdown・pandoc・MDX は文書として描画し、それ以外はハイライトしたコードとして表示します。特殊なバッファ（ヘルプ・ファイラー・ターミナル）は対象外です。 |
+| `max_file_size` | `2097152`（2 MB） | これより大きいファイル（バイト）は表示しません。バイナリのファイルは常に表示しません。 |
 | `port` | `9876` | プレビューのサーバーのポート。使用中なら次の空きポートを使います。 |
 | `host` | `"127.0.0.1"` | 待ち受けるアドレス。`"0.0.0.0"` にすると LAN 内の別端末から見られます。その場合はトークンが必要になります（[レシピ](#レシピ)の「タブレットで一緒に見る」を参照）。 |
 | `auto_open` | `true` | プレビューの開始時にブラウザを開きます。 |
@@ -361,6 +365,8 @@ require("md_preview").setup({
 
 ```lua
 require("md_preview").setup({
+  filetypes = { "*" },
+  max_file_size = 2 * 1024 * 1024,
   binary = vim.fn.stdpath("data") .. "/nvim-md-preview/nvim-md-preview",
   port = 9876,
   host = "127.0.0.1",

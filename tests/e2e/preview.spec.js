@@ -151,3 +151,41 @@ test("exports a PDF that looks like the preview", async () => {
   // 数式が KaTeX で描画されていれば、KaTeX のフォントが埋め込まれる（Typst の出力では元のテキストのまま）
   expect(pdf.includes("KaTeX")).toBe(true);
 });
+
+test("shows other files as highlighted code with line numbers", async ({ page }) => {
+  pv = await startPreview({}, "app.lua");
+  await page.goto(pv.url);
+  const view = page.locator("#content .code-view");
+  await expect(view).toBeVisible();
+  await expect(view.locator(".cv-line")).toHaveCount(Number(pv.expr('line("$")')));
+  await expect(view.locator(".hljs-keyword").first()).toBeVisible();
+  // 複数行にまたがるコメントは、どの行でもコメントの色になる
+  await expect(view.locator(".cv-line").nth(3).locator(".hljs-comment")).toHaveText("that spans lines ]]");
+  // Markdown 専用の機能は隠れる
+  for (const id of ["#tocBtn", "#slidesBtn", "#printBtn", "#exportBtn"]) await expect(page.locator(id)).toBeHidden();
+  // クリックした行へ Neovim のカーソルが移る
+  await view.locator(".cv-line").nth(6).click();
+  await expect.poll(() => pv.expr('line(".")')).toBe("7");
+});
+
+test("marks changed lines of code against HEAD", async ({ page }) => {
+  pv = await startPreview({}, "app.lua");
+  await page.goto(pv.url);
+  await expect(page.locator("#content .code-view")).toBeVisible();
+  pv.send(':%s/"hello, "/"hi, "/<CR>');
+  await expect(page.locator(".cv-line.diff-mod")).toHaveCount(1);
+  await expect(page.locator(".diff-ghost summary")).toContainText('return "hello, " .. name');
+  await expect(page.locator("#diffSummary")).toHaveText(/1 change vs HEAD/);
+});
+
+test("does not follow buffers that cannot be previewed", async ({ page }) => {
+  pv = await startPreview({ filetypes: ["markdown"] });
+  await page.goto(pv.url);
+  await expect(page.locator("#content h1")).toBeVisible();
+  // filetypes に無い種類のファイルと、ヘルプの画面では切り替わらない
+  pv.send(":e app.lua<CR>");
+  pv.send(":help<CR>");
+  await page.waitForTimeout(800);
+  await expect(page.locator("#title")).toHaveText("doc.md");
+  await expect(page.locator("#content .code-view")).toHaveCount(0);
+});
