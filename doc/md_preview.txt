@@ -145,6 +145,17 @@ Call `require("md_preview").setup(opts)`. All keys are optional; defaults:
         `DiffAdd`, ...). Colors that are hard to read on the preview's theme
         fall back to the defaults.
 
+    plantuml_path                                *md-preview-plantuml_path*
+        `""`. The `plantuml` command, or a `plantuml.jar` run with
+        `java -jar`, used to draw ```plantuml and ```puml blocks. Empty uses
+        `plantuml` on `PATH`. Without it, the blocks are shown as code.
+
+    plantuml_server                            *md-preview-plantuml_server*
+        `""`. A PlantUML server URL, for example
+        `"https://www.plantuml.com/plantuml"`. When set, the browser loads
+        the diagrams from this server instead of running `plantuml`, so the
+        diagram sources are sent to it. Empty never uses a server.
+
     binary                                              *md-preview-binary*
         Path to the preview binary. Defaults to the downloaded copy.
 

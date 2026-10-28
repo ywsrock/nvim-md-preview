@@ -26,6 +26,9 @@ serde = { version = "1", features = ["derive"] }
 rmpv = "1"
 bytes = "1"
 
+# PlantUML サーバーの URL に使う圧縮（deflate）
+miniz_oxide = "0.8"
+
 [profile.release]
 opt-level = "z"      # サイズ最優先（"s" より小さい）
 lto = "fat"          # リンク時最適化（最大限）

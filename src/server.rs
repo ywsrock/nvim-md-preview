@@ -6,7 +6,7 @@ use axum::{
         State,
     },
     response::IntoResponse,
-    routing::get,
+    routing::{get, post},
     Router,
 };
 use std::sync::Arc;
@@ -15,6 +15,7 @@ use crate::access::access_guard;
 use crate::assets::*;
 use crate::export::export_handler;
 use crate::page::*;
+use crate::plantuml::plantuml_handler;
 pub use crate::state::{Access, AppState, NvimNotify};
 pub use crate::export::export_bytes;
 
@@ -28,6 +29,7 @@ pub async fn start_server(host: &str, port: u16, state: Arc<AppState>) {
         .route("/ws", get(ws_handler))
         .route("/assets", get(assets_handler))
         .route("/export", get(export_handler))
+        .route("/plantuml", post(plantuml_handler))
         .route("/app.css", get(|| async { static_text("text/css; charset=utf-8", APP_CSS) }))
         .route("/app.js", get(|| async { static_text("application/javascript; charset=utf-8", APP_JS) }))
         .route("/settings", get(settings_handler))

@@ -189,3 +189,70 @@ test("does not follow buffers that cannot be previewed", async ({ page }) => {
   await expect(page.locator("#title")).toHaveText("doc.md");
   await expect(page.locator("#content .code-view")).toHaveCount(0);
 });
+
+// 文書の末尾に PlantUML のコードブロックを足す
+const addPlantuml = (pv) =>
+  pv.send(`:call append(line('$'), ['\`\`\`plantuml', 'Bob -> Alice : hello', '\`\`\`'])<CR>`);
+
+test("renders PlantUML with the local command", async ({ page }) => {
+  test.skip(process.platform === "win32", "uses a shell script in place of plantuml");
+  // 本物の plantuml の代わりに、受け取ったソースを文字にした SVG を返すスクリプトを使う
+  const bin = fs.mkdtempSync(path.join(require("node:os").tmpdir(), "mdp-puml-"));
+  const stub = path.join(bin, "plantuml");
+  fs.writeFileSync(stub, [
+    "#!/bin/sh",
+    `printf '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="40"><text x="10" y="25">'`,
+    "tr '\\n' ' '",
+    "printf '</text></svg>'",
+    "",
+  ].join("\n"), { mode: 0o755 });
+  try {
+    pv = await startPreview({ plantuml_path: stub });
+    await page.goto(pv.url);
+    await expect(page.locator("#content h1")).toBeVisible();
+    addPlantuml(pv);
+    const img = page.locator("#content .plantuml-block img");
+    await expect(img).toBeVisible();
+    expect(await img.evaluate((el) => el.naturalWidth)).toBe(300);
+    // @startuml / @enduml を補ってから plantuml に渡している
+    const src = decodeURIComponent(await img.getAttribute("src") ?? "");
+    expect(src).toContain("@startuml Bob -> Alice : hello @enduml");
+  } finally {
+    fs.rmSync(bin, { recursive: true, force: true });
+  }
+});
+
+test("uses the PlantUML server only when it is set", async ({ page }) => {
+  pv = await startPreview({ plantuml_path: "/nonexistent/plantuml", plantuml_server: "http://127.0.0.1:9/plantuml/" });
+  await page.goto(pv.url);
+  await expect(page.locator("#content h1")).toBeVisible();
+  addPlantuml(pv);
+  const img = page.locator("#content .plantuml-block img");
+  await expect(img).toHaveAttribute("src", /^http:\/\/127\.0\.0\.1:9\/plantuml\/svg\/[0-9A-Za-z_-]+$/);
+});
+
+test("shows PlantUML source and a hint without plantuml", async ({ page }) => {
+  pv = await startPreview({ plantuml_path: "/nonexistent/plantuml" });
+  await page.goto(pv.url);
+  await expect(page.locator("#content h1")).toBeVisible();
+  addPlantuml(pv);
+  const block = page.locator("#content .plantuml-block");
+  await expect(block.locator(".plantuml-source")).toHaveText(/Bob -> Alice : hello/);
+  await expect(block.locator(".plantuml-error")).toContainText("plantuml_server");
+  await expect(block.locator("img")).toHaveCount(0);
+});
+
+test("renders PlantUML with plantuml from PATH", async ({ page }) => {
+  const { execFileSync } = require("node:child_process");
+  let found = true;
+  try { execFileSync("plantuml", ["-version"], { stdio: "ignore" }); } catch { found = false; }
+  test.skip(!found, "plantuml is not installed");
+  pv = await startPreview();
+  await page.goto(pv.url);
+  await expect(page.locator("#content h1")).toBeVisible();
+  addPlantuml(pv);
+  const img = page.locator("#content .plantuml-block img");
+  await expect(img).toBeVisible({ timeout: 30_000 });
+  expect(await img.evaluate((el) => el.naturalWidth)).toBeGreaterThan(50);
+  expect(decodeURIComponent(await img.getAttribute("src") ?? "")).toContain("Alice");
+});

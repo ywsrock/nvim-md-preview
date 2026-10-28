@@ -131,6 +131,14 @@ header h1{margin:0;font-size:.9rem;font-weight:600;letter-spacing:.2px;flex:1;
 :is(#content,#slideBody) .code-wrap .copy-btn:hover{color:var(--fg);background:rgba(127,127,127,.15)}
 :is(#content,#slideBody) .code-wrap .copy-btn.copied{color:#3fb950}
 :is(#content,#slideBody) .code-wrap .code-lang ~ .copy-btn{top:26px}
+/* plantuml: 図は白地で描かれるので、ダークテーマでも白い台紙に載せる */
+.plantuml-block{margin:1em 0;border:1px solid var(--stroke);border-radius:8px;overflow:auto}
+.plantuml-block .plantuml-wrap{padding:1rem;display:flex;justify-content:center}
+.plantuml-block.plantuml-rendered:not(.plantuml-errored) .plantuml-wrap{background:#fff;border-radius:8px}
+.plantuml-block img{max-width:100%;height:auto}
+.plantuml-block.plantuml-errored .plantuml-wrap{display:block;padding:0}
+.plantuml-block .plantuml-source{margin:0;border:0;border-radius:0}
+.plantuml-block .plantuml-error{padding:.6rem 1rem;font-size:.85rem;color:var(--err-fg);border-top:1px solid var(--stroke)}
 /* mermaid */
 .mermaid-block{position:relative;margin:1em 0;border:1px solid var(--stroke);
   border-radius:10px;background:var(--panel);overflow:hidden;min-height:60px}
@@ -307,7 +315,7 @@ body.print-preview #toc{display:none}
   html,body{background:#fff!important;height:auto}
   #content{max-width:none!important;width:auto!important;margin:0!important;padding:0!important;
     box-shadow:none!important;background:none!important;animation:none}
-  :is(#content,#slideBody) pre,:is(#content,#slideBody) table,:is(#content,#slideBody) .mermaid-block,:is(#content,#slideBody) img,:is(#content,#slideBody) blockquote{break-inside:avoid}
+  :is(#content,#slideBody) pre,:is(#content,#slideBody) table,:is(#content,#slideBody) .mermaid-block,:is(#content,#slideBody) .plantuml-block,:is(#content,#slideBody) img,:is(#content,#slideBody) blockquote{break-inside:avoid}
   :is(#content,#slideBody) h1,:is(#content,#slideBody) h2,:is(#content,#slideBody) h3{break-after:avoid}
   .print-toc{display:block;break-after:page}
   .print-toc a{display:block;color:inherit;text-decoration:none;padding:.15em 0}

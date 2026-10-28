@@ -78,6 +78,44 @@ async function renderAllMermaid() {
   }
 }
 
+// ── PlantUML ──────────────────────────────────────────────────
+// サーバー（/plantuml）がローカルの plantuml で描いた SVG か、PlantUML サーバーの URL を返す
+const pumlResults = new Map();
+async function renderPlantumlBlock(block) {
+  const source = decodeURIComponent(block.dataset.plantumlSource || '');
+  const wrap = block.querySelector('.plantuml-wrap');
+  if (!source.trim() || !wrap) return;
+  let res = pumlResults.get(source);
+  if (!res) {
+    try {
+      res = await (await fetch('/plantuml', { method: 'POST', body: source })).json();
+    } catch (e) {
+      res = { error: 'Cannot reach the preview server' };
+    }
+    if (!res.error) pumlResults.set(source, res);
+  }
+  if (res.error) {
+    block.classList.add('plantuml-errored');
+    wrap.innerHTML = `<pre class="plantuml-source"></pre><div class="plantuml-error"></div>`;
+    wrap.firstChild.textContent = source;
+    wrap.lastChild.textContent = res.error;
+  } else {
+    block.classList.remove('plantuml-errored');
+    const img = new Image();
+    img.alt = 'PlantUML diagram';
+    img.src = res.url || 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(res.svg);
+    // 印刷（PDF）で図が欠けないよう、読み込みを待ってから次へ進む
+    await new Promise(r => { img.onload = img.onerror = r; wrap.replaceChildren(img); });
+  }
+  block.classList.add('plantuml-rendered');
+}
+
+async function renderAllPlantuml() {
+  for (const b of contentEl.querySelectorAll('.plantuml-block:not(.plantuml-rendered)')) {
+    await renderPlantumlBlock(b);
+  }
+}
+
 // ── Code: syntax highlight + lang badge + copy button ────────
 function attachCodeFeatures(root) {
   root.querySelectorAll('.code-wrap').forEach(wrap => {
@@ -154,9 +192,18 @@ async function renderContent(html) {
     code.closest('pre').replaceWith(block);
   });
 
+  // ```plantuml / ```puml → plantuml-block に変換
+  tmp.querySelectorAll('code.language-plantuml, code.language-puml').forEach(code => {
+    const block = document.createElement('div');
+    block.className = 'plantuml-block';
+    block.dataset.plantumlSource = encodeURIComponent(code.textContent || '');
+    block.innerHTML = `<div class="plantuml-wrap"><p style="color:var(--fg-muted);font-size:.85rem">Rendering…</p></div>`;
+    code.closest('pre').replaceWith(block);
+  });
+
   // コードブロックに code-wrap + lang badge を付ける
   // pulldown-cmark は <pre><code class="language-rust"> の形式で出力する
-  tmp.querySelectorAll('pre:not(.mermaid-block pre)').forEach(pre => {
+  tmp.querySelectorAll('pre:not(.mermaid-block pre):not(.plantuml-block pre)').forEach(pre => {
     if (pre.closest('.code-wrap')) return;
     const code = pre.querySelector('code');
     // "language-rust" → "rust" を抽出
@@ -182,8 +229,8 @@ async function renderContent(html) {
 
   // ブロックごとのキー。Mermaid はソースで、それ以外は加工後の HTML で判定する
   for (const el of Array.from(tmp.children)) {
-    el.dataset.key = el.classList.contains('mermaid-block')
-      ? 'mmd:' + el.dataset.mermaidSource
+    el.dataset.key = el.classList.contains('mermaid-block') ? 'mmd:' + el.dataset.mermaidSource
+      : el.classList.contains('plantuml-block') ? 'puml:' + el.dataset.plantumlSource
       : hashStr(el.outerHTML);
   }
 
@@ -197,6 +244,7 @@ async function renderContent(html) {
   // 検索中なら新しい内容で検索し直す
   if (!searchBar.hidden && searchInput.value) runSearch();
   await renderAllMermaid();
+  await renderAllPlantuml();
   positionDiffMarkers();
   if (pendingScroll) { scrollToLine(pendingScroll.line, pendingScroll.total); pendingScroll = null; }
 }
@@ -990,7 +1038,7 @@ function alignBlocks(oldTexts, newTexts) {
   while (j < m) ops.push({ type: 'ins', n: j++ });
   return ops;
 }
-const RICH = '.code-wrap,.mermaid-block,table,.math-display,pre';
+const RICH = '.code-wrap,.mermaid-block,.plantuml-block,table,.math-display,pre';
 const isRich = el => el.matches(RICH) || !!el.querySelector(RICH);
 const blockText = el => el.textContent.replace(/\s+/g, ' ').trim();
 
