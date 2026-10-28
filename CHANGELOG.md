@@ -2,7 +2,7 @@
 
 All notable changes are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.7.0] - 2026-10-28
 
 ### Changed
 - PDFs look like the preview: `pdf_engine` now defaults to `"browser"`, which prints the preview with the Chrome, Edge, Brave or Chromium already installed (in the background, with a temporary profile). Mermaid diagrams, math, callouts, wiki links, task lists and highlighted code are all rendered, and paper, margin, font, font size, table of contents and heading numbers follow the export settings. Without one of those browsers, Typst is used as before.
