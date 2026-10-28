@@ -6,6 +6,7 @@ mod page;
 mod plantuml;
 mod server;
 mod state;
+mod wsl;
 
 use server::{AppState, NvimNotify};
 use std::{path::PathBuf, sync::Arc};
@@ -324,7 +325,8 @@ async fn main() {
         eprintln!("A token is required to listen on the LAN");
         std::process::exit(2);
     }
-    let access = server::Access { lan, token };
+    let instance = std::env::var("MD_PREVIEW_INSTANCE").ok().filter(|s| !s.is_empty());
+    let access = server::Access { lan, token, instance };
 
     let (tx, _rx) = broadcast::channel::<String>(16);
     let (nvim_tx, nvim_rx) = mpsc::unbounded_channel::<NvimNotify>();

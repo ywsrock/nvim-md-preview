@@ -20,7 +20,9 @@ pub use crate::state::{Access, AppState, NvimNotify};
 pub use crate::export::export_bytes;
 
 pub async fn start_server(host: &str, port: u16, state: Arc<AppState>) {
-    let listener = find_listener(host, port).await;
+    // WSL では Windows 側で使用中のポートも避ける（ブラウザは Windows 側の localhost につなぐため）
+    let skip = crate::wsl::windows_listening_ports().await;
+    let listener = find_listener(host, port, &skip).await;
     let bound_port = listener.local_addr().unwrap().port();
     state.port.store(bound_port, std::sync::atomic::Ordering::Relaxed);
 
@@ -50,19 +52,30 @@ pub async fn start_server(host: &str, port: u16, state: Arc<AppState>) {
     axum::serve(listener, app).await.unwrap();
 }
 
-/// 指定ポートから順に空きポートを探す
-async fn find_listener(host: &str, start_port: u16) -> tokio::net::TcpListener {
-    for port in start_port..start_port.saturating_add(10) {
-        let addr = format!("{}:{}", host, port);
-        match tokio::net::TcpListener::bind(&addr).await {
-            Ok(l) => return l,
-            Err(_) => continue,
+/// 指定ポートから順に空きポートを探す（skip にあるポートは使わない）
+async fn find_listener(host: &str, start_port: u16, skip: &std::collections::HashSet<u16>) -> tokio::net::TcpListener {
+    if start_port != 0 {
+        for port in start_port..start_port.saturating_add(10) {
+            if skip.contains(&port) {
+                continue;
+            }
+            if let Ok(l) = tokio::net::TcpListener::bind(format!("{}:{}", host, port)).await {
+                return l;
+            }
         }
     }
-    // 0 を指定するとOSが空きポートを自動割り当て
-    tokio::net::TcpListener::bind(format!("{}:0", host))
-        .await
-        .expect("Failed to bind any port")
+    // 0 を指定すると OS が空きポートを自動で割り当てる
+    let mut last = None;
+    for _ in 0..5 {
+        let l = tokio::net::TcpListener::bind(format!("{}:0", host))
+            .await
+            .expect("Failed to bind any port");
+        match l.local_addr() {
+            Ok(a) if skip.contains(&a.port()) => last = Some(l),
+            _ => return l,
+        }
+    }
+    last.expect("Failed to bind any port")
 }
 
 /// WebSocket アップグレードハンドラ
@@ -136,5 +149,22 @@ fn handle_browser_message(state: &AppState, text: &str) {
             );
         }
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn find_listener_skips_ports_in_use_on_windows() {
+        // 空いているポートを 1 つ調べ、それを「Windows 側で使用中」として渡す
+        let free = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap().local_addr().unwrap().port();
+        let skip = std::collections::HashSet::from([free]);
+        let l = find_listener("127.0.0.1", free, &skip).await;
+        assert_ne!(l.local_addr().unwrap().port(), free);
+
+        let l = find_listener("127.0.0.1", free, &Default::default()).await;
+        assert_eq!(l.local_addr().unwrap().port(), free);
     }
 }

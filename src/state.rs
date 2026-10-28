@@ -62,6 +62,9 @@ pub struct Access {
     pub lan: bool,
     /// 設定されていれば全リクエストに必要（?token= か Cookie）
     pub token: Option<String>,
+    /// このプレビューの ID（Neovim が環境変数 MD_PREVIEW_INSTANCE で渡す）。
+    /// ブラウザで開く URL に ?instance= として付け、別のプレビューのサーバーにつながったことを見分ける
+    pub instance: Option<String>,
 }
 
 /// エクスポート設定（PDF は Typst、それ以外は pandoc に反映する）

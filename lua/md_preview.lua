@@ -511,9 +511,14 @@ local function start_binary()
     table.insert(cmd, state.token)
   end
 
+  -- このプレビューの ID。ブラウザで開く URL に付け、別のプレビューのサーバーにつながったら
+  --   （WSL と Windows で同じポートを使った場合など）サーバー側で内容を出さないようにする
+  state.instance = M._random_token()
+
   -- Rust バイナリを RPC ジョブとして起動
   state.job_id = vim.fn.jobstart(cmd, {
     rpc = true,
+    env = { MD_PREVIEW_INSTANCE = state.instance },
     on_exit = function(_, exit_code, _)
       vim.notify(
         string.format("[md-preview] The binary exited (exit: %d)", exit_code),
@@ -535,6 +540,7 @@ local function start_binary()
           local port_str = line:match("^READY:(%d+)$")
           if port_str then
             state.actual_port = tonumber(port_str)
+            vim.schedule(function() M._on_ready(state.actual_port) end)
           end
         end
       end
@@ -622,25 +628,26 @@ function M.start()
     send_export_config()
   end, 600)
 
-  -- READY:<port> が届くまで少し待ってからブラウザを開く
-  vim.defer_fn(function()
-    local port = state.actual_port or M.config.port
-    local url = string.format("http://127.0.0.1:%d", port)
-    if state.token then
-      url = url .. "/?token=" .. state.token
-      local lan = M._lan_addresses()
-      if #lan > 0 then
-        local urls = vim.tbl_map(function(ip)
-          return string.format("  http://%s:%d/?token=%s", ip, port, state.token)
-        end, lan)
-        vim.notify("[md-preview] Open from your LAN:" .. "\n" .. table.concat(urls, "\n"), vim.log.levels.INFO)
-      end
+end
+
+--- サーバーが待ち受けを始めたら（READY:<port>）ブラウザを開く
+--- ポートは WSL で Windows 側の使用中のポートを避けるなどして変わることがあるので、決まってから開く
+function M._on_ready(port)
+  local url = string.format("http://127.0.0.1:%d/?instance=%s", port, state.instance)
+  if state.token then
+    url = url .. "&token=" .. state.token
+    local lan = M._lan_addresses()
+    if #lan > 0 then
+      local urls = vim.tbl_map(function(ip)
+        return string.format("  http://%s:%d/?token=%s", ip, port, state.token)
+      end, lan)
+      vim.notify("[md-preview] Open from your LAN:" .. "\n" .. table.concat(urls, "\n"), vim.log.levels.INFO)
     end
-    if M.config.auto_open then
-      M._open_browser(url)
-    end
-    vim.notify(string.format("[md-preview] Preview started: %s", url), vim.log.levels.INFO)
-  end, 300)
+  end
+  if M.config.auto_open then
+    M._open_browser(url)
+  end
+  vim.notify(string.format("[md-preview] Preview started: %s", url), vim.log.levels.INFO)
 end
 
 --- バイナリの版（"0.5.0" など）。--version に対応していない古いバイナリは nil
@@ -825,6 +832,11 @@ local function detect_wsl()
   return content:find("microsoft") ~= nil or content:find("wsl") ~= nil
 end
 
+--- cmd.exe に渡す URL の & をエスケープする（?instance=...&token=... がコマンドの区切りにならないように）
+function M._cmd_escape(url)
+  return (url:gsub("&", "^&"))
+end
+
 --- OS・環境に応じてブラウザを開く
 --- WSL の場合は Windows 側のブラウザを優先する
 function M._open_browser(url)
@@ -848,7 +860,7 @@ function M._open_browser(url)
               string.format("Start-Process '%s'", url) }
     elseif vim.fn.executable("cmd.exe") == 1 then
       -- cmd.exe /c start "title" url  （空タイトルが必要）
-      cmd = { "cmd.exe", "/c", "start", '""', url }
+      cmd = { "cmd.exe", "/c", "start", '""', M._cmd_escape(url) }
     else
       cmd = { "xdg-open", url }
     end
@@ -859,7 +871,7 @@ function M._open_browser(url)
 
   else
     -- Windows (WSL でない)
-    cmd = { "cmd.exe", "/c", "start", '""', url }
+    cmd = { "cmd.exe", "/c", "start", '""', M._cmd_escape(url) }
   end
 
   vim.fn.jobstart(cmd, { detach = true })
