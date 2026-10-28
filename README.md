@@ -398,9 +398,9 @@ require("md_preview").setup({
 
 </details>
 
-## Coming from markdown-preview.nvim
+## Compatibility with markdown-preview.nvim
 
-The commands are the same: `:MarkdownPreview`, `:MarkdownPreviewStop` and `:MarkdownPreviewToggle` keep working. Replace the plugin spec and `build` step, then map your settings:
+nvim-md-preview uses the same command names as markdown-preview.nvim: `:MarkdownPreview`, `:MarkdownPreviewStop` and `:MarkdownPreviewToggle`. The table shows the equivalent of each markdown-preview.nvim setting:
 
 | markdown-preview.nvim | nvim-md-preview |
 |---|---|

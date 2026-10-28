@@ -398,9 +398,9 @@ require("md_preview").setup({
 
 </details>
 
-## markdown-preview.nvim から乗り換える
+## markdown-preview.nvim との互換性
 
-コマンドは同じです。`:MarkdownPreview`、`:MarkdownPreviewStop`、`:MarkdownPreviewToggle` はそのまま使えます。プラグインの指定と `build` を置き換え、設定を次のように移してください。
+nvim-md-preview は、markdown-preview.nvim と同じコマンド名（`:MarkdownPreview`、`:MarkdownPreviewStop`、`:MarkdownPreviewToggle`）を使います。markdown-preview.nvim の各設定に対応するものは次のとおりです。
 
 | markdown-preview.nvim | nvim-md-preview |
 |---|---|
