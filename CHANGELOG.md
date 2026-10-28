@@ -2,7 +2,7 @@
 
 All notable changes are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.8.0] - 2026-10-28
 
 ### Added
 - PlantUML diagrams in ` ```plantuml ` and ` ```puml ` blocks. They are drawn with the local `plantuml` command (or a `plantuml.jar` set in `plantuml_path`). A PlantUML server is used only when `plantuml_server` is set, so diagram sources never leave the machine by default. Diagrams are included in browser-printed PDFs. `:checkhealth md_preview` shows which one is used.
