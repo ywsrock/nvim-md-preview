@@ -112,6 +112,9 @@ jobs:
           cache: npm
           cache-dependency-path: tests/e2e/package-lock.json
 
+      - name: Check preview script syntax
+        run: node --check src/preview/app.js
+
       - name: Install Playwright
         working-directory: tests/e2e
         run: |

@@ -9,11 +9,18 @@ Thanks for helping improve nvim-md-preview. Bug reports, ideas and pull requests
 | `plugin/md_preview.lua` | User commands |
 | `lua/md_preview.lua` | Neovim side: starts the binary, sends the buffer and cursor, install, export |
 | `lua/md_preview/health.lua` | `:checkhealth md_preview` |
-| `src/main.rs` | msgpack-rpc loop on stdin/stdout |
+| `src/main.rs` | msgpack-rpc loop on stdin/stdout and the handlers for messages from Neovim |
 | `src/markdown.rs` | Markdown → HTML (pulldown-cmark), source-line markers, wiki links, math |
-| `src/server.rs` | HTTP / WebSocket server, access control, export, and the preview page (HTML/CSS/JS) |
+| `src/server.rs` | Starts the HTTP / WebSocket server, routes, and the WebSocket to the browser |
+| `src/state.rs` | Shared state and settings received from Neovim |
+| `src/access.rs` | Access control for every request (Host / Origin checks, LAN token) |
+| `src/assets.rs` | Embedded JS / CSS / fonts, and images from the document's folder |
+| `src/page.rs` | The preview page, the print page used for PDFs, and browser settings |
+| `src/export.rs` | Export: Markdown, pandoc, Typst, and printing PDFs with a browser |
+| `src/preview/` | The preview page itself: `index.html`, `style.css`, `app.js` |
 | `download-libs.sh` | Fetches the JS/CSS libraries embedded at build time |
 | `tests/smoke.lua` | Headless Neovim smoke test |
+| `tests/e2e/` | Browser tests with Playwright |
 
 ## Development
 
@@ -31,7 +38,7 @@ To try your build, point the plugin at it:
 require("md_preview").setup({ binary = vim.fn.getcwd() .. "/target/release/nvim-md-preview" })
 ```
 
-The preview page is embedded in `src/server.rs`, so rebuild the binary after changing HTML, CSS or JS.
+The preview page lives in `src/preview/` and is embedded into the binary at build time, so rebuild the binary after changing HTML, CSS or JS.
 
 ### Browser tests
 
