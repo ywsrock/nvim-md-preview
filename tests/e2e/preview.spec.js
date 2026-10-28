@@ -243,9 +243,8 @@ test("shows PlantUML source and a hint without plantuml", async ({ page }) => {
 });
 
 test("renders PlantUML with plantuml from PATH", async ({ page }) => {
-  const { execFileSync } = require("node:child_process");
-  let found = true;
-  try { execFileSync("plantuml", ["-version"], { stdio: "ignore" }); } catch { found = false; }
+  // plantuml -version の終了コードは版によって 0 でないことがあるので、起動できるかだけを見る
+  const found = !require("node:child_process").spawnSync("plantuml", ["-version"], { stdio: "ignore" }).error;
   test.skip(!found, "plantuml is not installed");
   pv = await startPreview();
   await page.goto(pv.url);
