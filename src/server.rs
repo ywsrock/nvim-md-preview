@@ -84,6 +84,12 @@ pub struct AppState {
     pub access: Access,
     /// 最新の差分表示メッセージ（後から接続したブラウザにも送る）
     pub latest_diff: Arc<RwLock<Option<String>>>,
+    /// 実際に待ち受けているポート（PDF をブラウザで印刷するときに /print を開くのに使う）
+    pub port: Arc<std::sync::atomic::AtomicU16>,
+    /// PDF の印刷に使う Chromium 系ブラウザ（Neovim 側で探して送ってくる。無ければ Typst を使う）
+    pub browser_path: Arc<RwLock<Option<PathBuf>>>,
+    /// Typst のパッケージ（cmarker）を置いたディレクトリ。あればネットワークに取りに行かない
+    pub typst_packages: Arc<RwLock<Option<PathBuf>>>,
 }
 
 /// サーバーへのアクセス制御
@@ -98,6 +104,8 @@ pub struct Access {
 /// エクスポート設定（PDF は Typst、それ以外は pandoc に反映する）
 #[derive(Clone, Debug)]
 pub struct ExportOptions {
+    /// PDF の作り方: "browser"（プレビューをブラウザで印刷）| "typst"
+    pub pdf_engine: String,
     /// 用紙サイズ（Typst の paper 名: "a4", "us-letter" など）
     pub paper: String,
     /// 余白（Typst の長さ: "2cm" など）
@@ -117,6 +125,7 @@ pub struct ExportOptions {
 impl Default for ExportOptions {
     fn default() -> Self {
         Self {
+            pdf_engine: "browser".to_string(),
             paper: "a4".to_string(),
             margin: "2cm".to_string(),
             font: String::new(),
@@ -149,6 +158,9 @@ impl AppState {
             )),
             access,
             latest_diff: Arc::new(RwLock::new(None)),
+            port: Arc::new(std::sync::atomic::AtomicU16::new(0)),
+            browser_path: Arc::new(RwLock::new(None)),
+            typst_packages: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -170,6 +182,7 @@ impl AppState {
 pub async fn start_server(host: &str, port: u16, state: Arc<AppState>) {
     let listener = find_listener(host, port).await;
     let bound_port = listener.local_addr().unwrap().port();
+    state.port.store(bound_port, std::sync::atomic::Ordering::Relaxed);
 
     let app = Router::new()
         .route("/", get(preview_page))
@@ -177,6 +190,7 @@ pub async fn start_server(host: &str, port: u16, state: Arc<AppState>) {
         .route("/assets", get(assets_handler))
         .route("/export", get(export_handler))
         .route("/settings", get(settings_handler))
+        .route("/print", get(print_page))
         .route("/custom.css", get(custom_css_handler))
         .route("/lib/highlight.min.js",    get(|| async { js_response(HLJS_JS) }))
         .route("/lib/hljs-dark.min.css",   get(|| async { css_response(HLJS_DARK_CSS) }))
@@ -306,6 +320,38 @@ async fn katex_font_handler(AxumPath(name): AxumPath<String>) -> Response {
 /// プレビューページの HTML を返す
 async fn preview_page() -> impl IntoResponse {
     Html(PREVIEW_HTML)
+}
+
+/// /print — PDF 用のページ。最新の内容と出力の設定を埋め込み、WebSocket を待たずに描画する
+async fn print_page(State(state): State<Arc<AppState>>) -> Response {
+    let content = state.latest_html.read().await.clone().unwrap_or_else(|| "null".to_string());
+    let opts = state.export_opts.read().await.clone();
+    let options = serde_json::json!({
+        "paper": css_paper(&opts.paper),
+        "margin": opts.margin.parse::<f64>().map(|n| format!("{}cm", n)).unwrap_or_else(|_| opts.margin.clone()),
+        "font": opts.font,
+        "font_size": opts.font_size,
+        "toc": opts.toc,
+        "numbering": opts.numbering,
+    });
+    // 文書の中の "</script>" でスクリプトが途中で閉じないようにする
+    let script = format!(
+        "<script>window.__MDP_PRINT__ = {{\"content\": {}, \"options\": {}}};</script>\n  <script type=\"module\">",
+        content.replace("</", "<\\/"),
+        options.to_string().replace("</", "<\\/"),
+    );
+    Html(PREVIEW_HTML.replacen("<script type=\"module\">", &script, 1)).into_response()
+}
+
+/// Typst の用紙名を CSS の @page size に直す（"us-letter" → "letter" など）
+fn css_paper(paper: &str) -> String {
+    match paper.to_ascii_lowercase().as_str() {
+        "us-letter" => "letter".to_string(),
+        "us-legal" => "legal".to_string(),
+        "us-tabloid" => "ledger".to_string(),
+        p if p.len() <= 3 && p.starts_with(['a', 'b', 'c']) => p.to_uppercase(),
+        p => p.to_string(),
+    }
 }
 
 /// WebSocket アップグレードハンドラ
@@ -508,11 +554,19 @@ pub async fn export_bytes(state: &AppState, format: &str) -> Result<(Vec<u8>, St
     tokio::fs::write(&md_tmp, &content).await
         .map_err(|e| format!("{}: {}", "Failed to create a temporary file", e))?;
 
-    let result = if ext == "pdf" {
+    let browser = state.browser_path.read().await.clone();
+    let pdf_engine = state.export_opts.read().await.pdf_engine.clone();
+    let print_browser = browser.filter(|_| ext == "pdf" && pdf_engine == "browser");
+    let result = if let Some(browser) = print_browser {
+        let token = state.access.token.clone();
+        let port = state.port.load(std::sync::atomic::Ordering::Relaxed);
+        print_with_browser(&browser, port, token.as_deref(), &work).await
+    } else if ext == "pdf" {
         let typst = state.typst_path.read().await;
         let typst_bin = typst.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|| "typst".to_string());
         let opts = state.export_opts.read().await.clone();
-        convert_with_typst(&typst_bin, &work, base_dir.as_deref(), &opts).await
+        let packages = state.typst_packages.read().await.clone();
+        convert_with_typst(&typst_bin, &work, base_dir.as_deref(), &opts, packages.as_deref()).await
     } else {
         let pandoc = state.pandoc_path.read().await;
         let pandoc_bin = pandoc.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|| "pandoc".to_string());
@@ -584,6 +638,62 @@ async fn convert_with_pandoc(
         .map_err(|_| "Failed to read the converted file.".to_string())
 }
 
+/// Chromium 系ブラウザを画面なしで起動し、/print を PDF に書き出す
+/// ふだん使っているブラウザに影響しないよう、一時ディレクトリのプロフィールで起動する
+async fn print_with_browser(browser: &Path, port: u16, token: Option<&str>, work: &Path) -> Result<Vec<u8>, String> {
+    let pdf_path = work.join("output.pdf");
+    let url = match token {
+        Some(t) => format!("http://127.0.0.1:{}/print?token={}", port, t),
+        None => format!("http://127.0.0.1:{}/print", port),
+    };
+    let run = |no_sandbox: bool| {
+        let mut cmd = tokio::process::Command::new(browser);
+        cmd.arg("--headless")
+            .arg("--disable-gpu")
+            .arg("--no-first-run")
+            .arg("--no-default-browser-check")
+            .arg("--disable-extensions")
+            .arg(format!("--user-data-dir={}", work.join("browser-profile").display()))
+            .arg("--no-pdf-header-footer")
+            .arg("--print-to-pdf-no-header")
+            // Mermaid や数式の描画が終わるまで待ってから印刷する
+            .arg("--virtual-time-budget=20000")
+            .arg(format!("--print-to-pdf={}", pdf_path.display()));
+        if no_sandbox {
+            cmd.arg("--no-sandbox");
+        }
+        cmd.arg(&url).kill_on_drop(true);
+        cmd
+    };
+
+    let attempt = |no_sandbox: bool| {
+        let mut cmd = run(no_sandbox);
+        async move {
+            match tokio::time::timeout(std::time::Duration::from_secs(90), cmd.output()).await {
+                Err(_) => Err("The browser did not finish printing within 90 seconds.".to_string()),
+                Ok(Err(e)) => Err(format!("Failed to start the browser: {}", e)),
+                Ok(Ok(out)) => Ok(out),
+            }
+        }
+    };
+
+    let mut output = attempt(false).await?;
+    // Linux では、ユーザー名前空間が使えない環境（コンテナや一部の CI）でサンドボックスの起動に失敗することがある
+    if cfg!(target_os = "linux") && !pdf_path.exists() {
+        output = attempt(true).await?;
+    }
+    match tokio::fs::read(&pdf_path).await {
+        Ok(data) if !data.is_empty() => Ok(data),
+        _ => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(format!(
+                "The browser could not print the PDF. Set export.pdf_engine = \"typst\" to use Typst instead.\n\nError: {}",
+                truncate_chars(&stderr, 500)
+            ))
+        }
+    }
+}
+
 /// Typst の文字列リテラルに埋め込めるようにエスケープする
 fn typst_str(s: &str) -> String {
     format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
@@ -652,6 +762,7 @@ async fn convert_with_typst(
     work: &Path,
     base_dir: Option<&Path>,
     opts: &ExportOptions,
+    packages: Option<&Path>,
 ) -> Result<Vec<u8>, String> {
     // Typst の cmarker パッケージで Markdown をそのまま処理
     // Markdown は raw ブロックに埋め込むと ``` を含む文書で壊れるので、ファイルを read() で読む
@@ -675,6 +786,11 @@ async fn convert_with_typst(
         .map_err(|e| format!("{}: {}", "Failed to create a temporary file", e))?;
 
     let mut args: Vec<String> = vec!["compile".into()];
+    // 同梱したパッケージがあれば、そこから読む（ネットワークに取りに行かない）
+    if let Some(dir) = packages.filter(|d| d.is_dir()) {
+        args.push("--package-cache-path".into());
+        args.push(dir.to_string_lossy().to_string());
+    }
     if let Some(root) = root {
         args.push("--root".into());
         args.push(root.to_string_lossy().to_string());
@@ -1068,6 +1184,9 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
         box-shadow:none!important;background:none!important;animation:none}
       :is(#content,#slideBody) pre,:is(#content,#slideBody) table,:is(#content,#slideBody) .mermaid-block,:is(#content,#slideBody) img,:is(#content,#slideBody) blockquote{break-inside:avoid}
       :is(#content,#slideBody) h1,:is(#content,#slideBody) h2,:is(#content,#slideBody) h3{break-after:avoid}
+      .print-toc{display:block;break-after:page}
+      .print-toc a{display:block;color:inherit;text-decoration:none;padding:.15em 0}
+      .print-toc-title{font-size:1.4em;font-weight:600;margin-bottom:.6em}
       :is(#content,#slideBody) .diff-add,:is(#content,#slideBody) .diff-mod{background:none}
       :is(#content,#slideBody) .diff-add::before,:is(#content,#slideBody) .diff-add::after,:is(#content,#slideBody) .diff-mod::before,:is(#content,#slideBody) .diff-mod::after{display:none}
       :is(#content,#slideBody) ins.diff-w{background:none;box-shadow:none}
@@ -1197,6 +1316,8 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
 
     // ── DOM refs ──────────────────────────────────────────────────
     const $ = id => document.getElementById(id);
+    // /print で開かれたとき（PDF 用）に、サーバーが内容と出力の設定を埋め込む
+    const PRINT = window.__MDP_PRINT__ || null;
 
     const contentEl   = $('content');
     const titleEl     = $('title');
@@ -1771,11 +1892,13 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       const t = storedTheme() || configuredTheme;
       return t === 'auto' ? (prefersDark.matches ? 'dark' : 'light') : t;
     }
-    applyTheme(resolveTheme());
+    // PDF 用の印刷ページは常にライトテーマ
+    applyTheme(PRINT ? 'light' : resolveTheme());
     // キーボードショートカット（t / / / Ctrl+F / p）。browser_keys = false なら使わない。
     // Vimium などブラウザの Vim 系拡張とキーがぶつかるため、無効にできるようにしている
     let browserKeys = true;
     fetch('/settings').then(r => r.json()).then(cfg => {
+      if (PRINT) return;
       configuredTheme = cfg.theme || 'auto';
       if (resolveTheme() !== currentTheme) themeBtn.click();
       browserKeys = cfg.browser_keys !== false;
@@ -2362,7 +2485,55 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
     });
     window.addEventListener('afterprint', () => { closedDetails.forEach(d => d.open = false); closedDetails = []; });
 
-    connect();
+    // ── PDF 用の印刷ページ（/print）──────────────────────────────
+    // 用紙・余白・フォントは @page と CSS に、目次と見出し番号は印刷用の要素と CSS カウンターにする
+    async function startPrint(p) {
+      const o = p.options || {};
+      const css = [
+        `@page { size: ${o.paper || 'A4'}; margin: ${o.margin || '2cm'}; }`,
+        `#content { font-size: ${o.font_size || 11}pt; }`,
+      ];
+      if (o.font) css.push(`#content { font-family: ${JSON.stringify(o.font)}, -apple-system, "Segoe UI", sans-serif; }`);
+      if (o.numbering) css.push(
+        '#content { counter-reset: h2; }',
+        '#content h2 { counter-reset: h3; counter-increment: h2; }',
+        '#content h2::before { content: counter(h2) ". "; }',
+        '#content h3 { counter-increment: h3; }',
+        '#content h3::before { content: counter(h2) "." counter(h3) " "; }',
+      );
+      const style = document.createElement('style');
+      style.textContent = css.join('\n');
+      document.head.appendChild(style);
+
+      const c = p.content;
+      if (c) {
+        document.title = c.title;
+        titleEl.textContent = c.title;
+        updateFrontMatter(c.front_matter || null);
+        await renderContent(c.html);
+      }
+      if (o.toc) {
+        const hs = Array.from(contentEl.querySelectorAll('h1,h2,h3'));
+        if (hs.length) {
+          const nav = document.createElement('nav');
+          nav.className = 'print-toc';
+          const title = document.createElement('div');
+          title.className = 'print-toc-title';
+          title.textContent = 'Contents';
+          nav.appendChild(title);
+          for (const h of hs) {
+            const a = document.createElement('a');
+            a.href = '#' + h.id;
+            a.textContent = h.textContent.trim();
+            a.style.paddingLeft = ((+h.tagName[1] - 1) * 1.2) + 'em';
+            nav.appendChild(a);
+          }
+          contentEl.prepend(nav);
+        }
+      }
+    }
+
+    if (PRINT) startPrint(PRINT); else connect();
 
     // ── Export ────────────────────────────────────────────────────
     const exportBtn  = document.getElementById('exportBtn');

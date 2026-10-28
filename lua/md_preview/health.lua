@@ -124,7 +124,21 @@ local function check_export(config)
   h.start("Export engines")
   local export = config.export or {}
   check_engine("pandoc", export.pandoc_path, "DOCX / HTML / EPUB")
-  check_engine("typst", export.typst_path, "PDF")
+  -- PDF はブラウザで印刷するのが既定。ブラウザが無いときは Typst を使う
+  local md = require("md_preview")
+  if export.pdf_engine == "browser" then
+    local browser = md._find_browser()
+    if browser then
+      h.ok(string.format("PDF: printed with %s", browser))
+    else
+      h.warn("PDF: no Chrome, Edge, Brave or Chromium found, so Typst is used (Mermaid, math and callouts are not rendered)", {
+        "Install one of those browsers, or set export.browser_path",
+      })
+      check_engine("typst", export.typst_path, "PDF")
+    end
+  else
+    check_engine("typst", export.typst_path, "PDF")
+  end
 end
 
 --- ダウンロード手段（:MdPreviewInstall で使う）

@@ -172,7 +172,13 @@ PDF uses Typst, DOCX / HTML / EPUB use pandoc. Both are downloaded by
                     offered in the preview's Export menu and in
                     |:MdPreviewExport| completion. `{}` hides the Export
                     button.
-    pdf_engine      `"typst"`. Any other value skips downloading Typst.
+    pdf_engine      `"browser"`. Print the preview with Chrome, Edge, Brave or
+                    Chromium, so the PDF looks like the preview. Without
+                    one of them, Typst is used. `"typst"` always uses Typst
+                    (supports `template`; Mermaid, math and callouts are not
+                    rendered).
+    browser_path    `""`. Browser for PDFs. Empty looks for Chrome, Edge,
+                    Brave and Chromium in their usual places and on PATH.
     docx_engine     `"pandoc"`. Any other value skips downloading pandoc.
     pandoc_path     `""`. Empty: downloaded copy, then `pandoc` on PATH.
     typst_path      `""`. Empty: downloaded copy, then `typst` on PATH.
@@ -182,8 +188,8 @@ PDF uses Typst, DOCX / HTML / EPUB use pandoc. Both are downloaded by
     font_size       `11` (pt).
     toc             `false`. Add a table of contents (PDF and pandoc).
     numbering       `false`. Number headings (PDF and pandoc).
-    template        `""`. A Typst file exporting `template`, applied as a
-                    show rule:
+    template        `""`. With `pdf_engine = "typst"`, a Typst file exporting
+                    `template`, applied as a show rule:
 >typst
     #let template(doc) = {
       set page(header: align(right)[Internal])

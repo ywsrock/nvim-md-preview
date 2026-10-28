@@ -161,10 +161,10 @@ Git のリポジトリ内のファイルを編集すると、`HEAD` との差分
 
 ### 出力
 
-`:MdPreviewExport pdf` で、Typst を使ってファイルの隣に PDF を書き出します。用紙サイズ・余白・フォント・目次・独自のテンプレートを指定できます。DOCX・HTML・EPUB は pandoc で出力します。未保存の編集も含まれます。
+`:MdPreviewExport pdf` で、**プレビューと同じ見た目の PDF**（図・数式・callout・色付きのコードを含む）をファイルの隣に書き出します。PC に入っている Chrome・Edge・Brave・Chromium のいずれかで、画面を出さずにプレビューを印刷します。用紙サイズ・余白・フォント・目次・見出し番号は設定に従います。DOCX・HTML・EPUB は pandoc で出力します。未保存の編集も含まれます。
 
 > [!NOTE]
-> PDF の出力では、Mermaid の図・数式・callout はまだ描画されず、元のテキストのまま出力されます。紙に残したいときは印刷プレビューを使ってください。
+> これらのブラウザが無い場合は、Typst で PDF を作ります（どちらを使うかは `:checkhealth md_preview` で分かります）。Typst の出力は独自のテンプレートに対応しますが、Mermaid の図・数式・callout は描画されません。
 
 ## レシピ
 
@@ -228,9 +228,28 @@ vim.api.nvim_create_autocmd("FileType", {
 <details>
 <summary><b>会社の書式で PDF を渡す</b></summary>
 
+ブラウザで作る PDF（既定）はプレビューのスタイルをそのまま使うので、`custom_css` に印刷用の指定を書くだけで変えられます。
+
+```css
+/* ~/.config/nvim/preview.css */
+@media print {
+  #content { font-family: "Noto Sans CJK JP", sans-serif; }
+  #content h1 { color: #0b3d91; }
+}
+```
+
 ```lua
 require("md_preview").setup({
-  export = { paper = "a4", toc = true, numbering = true, template = "~/.config/nvim/report.typ" },
+  custom_css = "~/.config/nvim/preview.css",
+  export = { paper = "a4", toc = true, numbering = true },
+})
+```
+
+ページ全体を細かく作り込みたいときは、Typst とテンプレートを使います。
+
+```lua
+require("md_preview").setup({
+  export = { pdf_engine = "typst", template = "~/.config/nvim/report.typ" },
 })
 ```
 
@@ -315,7 +334,8 @@ require("md_preview").setup({
 | 設定 | 既定値 | 説明 |
 |---|---|---|
 | `formats` | `{ "pdf", "docx", "html", "epub", "markdown" }` | プレビューの Export メニューと `:MdPreviewExport` の補完に出す形式。`{}` にすると Export ボタンを隠します。 |
-| `pdf_engine` | `"typst"` | `"typst"` なら `:MdPreviewInstall` で PDF 用の Typst をダウンロードします。それ以外の値ではダウンロードしません。 |
+| `pdf_engine` | `"browser"` | PDF の作り方。`"browser"` は Chrome・Edge・Brave・Chromium でプレビューを印刷するので、プレビューと同じ見た目になります。これらが無ければ Typst を使います。`"typst"` は常に Typst を使います（`template` に対応。図・数式・callout は描画されません）。 |
+| `browser_path` | `""` | PDF の作成に使うブラウザ。空なら、Chrome・Edge・Brave・Chromium を標準の場所と `PATH` から探します。 |
 | `docx_engine` | `"pandoc"` | `"pandoc"` なら `:MdPreviewInstall` で DOCX・HTML・EPUB 用の pandoc をダウンロードします。それ以外の値ではダウンロードしません。 |
 | `pandoc_path` | `""` | pandoc のパス。空ならダウンロードしたもの、次に `PATH` 上の `pandoc` を使います。 |
 | `typst_path` | `""` | Typst のパス。空ならダウンロードしたもの、次に `PATH` 上の `typst` を使います。 |
@@ -325,7 +345,7 @@ require("md_preview").setup({
 | `font_size` | `11` | PDF の本文サイズ（pt）。 |
 | `toc` | `false` | 目次を入れます（PDF・DOCX・HTML・EPUB）。 |
 | `numbering` | `false` | 見出しに番号を付けます（PDF・DOCX・HTML・EPUB）。 |
-| `template` | `""` | `template` 関数を export した Typst ファイル。PDF 全体に適用します（[レシピ](#レシピ)を参照）。 |
+| `template` | `""` | `template` 関数を export した Typst ファイル。`pdf_engine = "typst"` のとき PDF 全体に適用します（[レシピ](#レシピ)を参照）。 |
 
 ### Vimscript
 
@@ -360,7 +380,8 @@ require("md_preview").setup({
 
   export = {
     formats = { "pdf", "docx", "html", "epub", "markdown" },
-    pdf_engine = "typst",
+    pdf_engine = "browser",
+    browser_path = "",
     docx_engine = "pandoc",
     pandoc_path = "",
     typst_path = "",

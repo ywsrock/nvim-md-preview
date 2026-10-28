@@ -46,8 +46,11 @@ M.config = {
 
   -- エクスポート設定
   export = {
-    -- PDF エンジン: "typst"。それ以外にすると :MdPreviewInstall で Typst をダウンロードしない
-    pdf_engine  = "typst",
+    -- PDF の作り方: "browser"（プレビューを Chrome / Edge / Brave / Chromium で印刷。見た目がプレビューと同じ）
+    --   | "typst"。"browser" でブラウザが見つからないときは Typst を使う
+    pdf_engine  = "browser",
+    -- PDF の印刷に使うブラウザ。空なら Chrome / Edge / Brave / Chromium を探す
+    browser_path = "",
     -- DOCX/HTML/EPUB エンジン: "pandoc"。それ以外にすると pandoc をダウンロードしない
     docx_engine = "pandoc",
     -- プレビューの Export メニューと :MdPreviewExport の補完に出す形式（空にすると Export ボタンを隠す）
@@ -270,6 +273,47 @@ local function send_scroll(buf)
     math.floor(line), math.floor(total))
 end
 
+--- PDF の印刷に使う Chromium 系ブラウザを探す（見つからなければ nil）
+function M._find_browser()
+  local configured = M.config.export.browser_path
+  if configured ~= nil and configured ~= "" then
+    local path = vim.fn.expand(configured)
+    return vim.fn.executable(path) == 1 and path or nil
+  end
+  local candidates = {}
+  if vim.fn.has("mac") == 1 then
+    for _, root in ipairs({ "/Applications", vim.fn.expand("~/Applications") }) do
+      for _, app in ipairs({ "Google Chrome", "Microsoft Edge", "Brave Browser", "Chromium" }) do
+        table.insert(candidates, string.format("%s/%s.app/Contents/MacOS/%s", root, app, app))
+      end
+    end
+  elseif vim.fn.has("win32") == 1 then
+    for _, root in ipairs({ os.getenv("ProgramFiles"), os.getenv("ProgramFiles(x86)"), os.getenv("LOCALAPPDATA") }) do
+      if root then
+        table.insert(candidates, root .. "\\Google\\Chrome\\Application\\chrome.exe")
+        table.insert(candidates, root .. "\\Microsoft\\Edge\\Application\\msedge.exe")
+        table.insert(candidates, root .. "\\BraveSoftware\\Brave-Browser\\Application\\brave.exe")
+        table.insert(candidates, root .. "\\Chromium\\Application\\chrome.exe")
+      end
+    end
+  end
+  for _, name in ipairs({ "google-chrome", "google-chrome-stable", "chromium", "chromium-browser",
+    "microsoft-edge", "microsoft-edge-stable", "brave-browser" }) do
+    table.insert(candidates, name)
+  end
+  for _, c in ipairs(candidates) do
+    if vim.fn.executable(c) == 1 then return vim.fn.exepath(c) end
+  end
+  return nil
+end
+
+--- PDF を実際にどう作るか: "browser" | "typst"
+function M._pdf_engine()
+  local engine = M.config.export.pdf_engine
+  if engine == "browser" and not M._find_browser() then return "typst" end
+  return engine
+end
+
 --- エクスポートエンジンのパスを解決してバイナリに送る
 local function send_export_config()
   if state.chan_id == nil then return end
@@ -316,6 +360,10 @@ local function send_export_config()
     browser_keys = M.config.browser_keys,
     export_formats = M.config.export.formats,
     export = {
+      pdf_engine = ex.pdf_engine,
+      browser_path = ex.pdf_engine == "browser" and (M._find_browser() or "") or "",
+      -- :MdPreviewInstall で同梱した Typst のパッケージ（無ければ Typst が初回にネットワークから取得する）
+      typst_packages = vim.fn.isdirectory(install_dir .. "/typst-packages") == 1 and (install_dir .. "/typst-packages") or "",
       paper     = ex.paper,
       margin    = ex.margin,
       font      = ex.font,
@@ -824,6 +872,14 @@ local function install_item(item, install_dir, is_win, on_done)
     on_done()
   end
   local function succeed()
+    -- ディレクトリとして展開するもの（Typst のパッケージ）は、できていれば成功
+    if item.dir then
+      if vim.fn.isdirectory(item.dest) == 1 then
+        item.status = "done"
+        return on_done()
+      end
+      return fail(string.format("Not found after extracting: %s", item.dest))
+    end
     if finalize(item.dest, is_win) then
       item.status = "done"
       on_done()
@@ -936,14 +992,19 @@ function M.install(opts)
     items[#items + 1] = { label = "pandoc", name = "pandoc", asset = "pandoc-" .. plat .. ext,
       dest = install_dir .. "/pandoc" .. ext, archive = true }
   end
-  if cfg.pdf_engine == "typst" then
+  -- Typst は PDF を Typst で作るとき（"browser" でブラウザが無いときも）だけ入れる。
+  -- パッケージ（cmarker）も一緒に入れて、PDF を作るときにネットワークへ取りに行かないようにする
+  if cfg.pdf_engine == "typst" or (cfg.pdf_engine == "browser" and not M._find_browser()) then
     items[#items + 1] = { label = "typst", name = "Typst", asset = "typst-" .. plat .. ext,
       dest = install_dir .. "/typst" .. ext, archive = true }
+    items[#items + 1] = { label = "pkgs", name = "Typst packages", asset = "typst-packages",
+      dest = install_dir .. "/typst-packages", archive = true, dir = true }
   end
   for _, it in ipairs(items) do
     -- .tar.gz のアセット名には .exe を付けない（pandoc-windows.tar.gz）
     if it.archive then it.asset = it.asset:gsub("%.exe$", "") end
-    if opts.missing_only and vim.fn.executable(it.dest) == 1 then it.status = "done" end
+    local present = it.dir and vim.fn.isdirectory(it.dest) == 1 or vim.fn.executable(it.dest) == 1
+    if opts.missing_only and present then it.status = "done" end
   end
 
   M._installing = true
