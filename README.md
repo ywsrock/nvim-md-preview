@@ -459,6 +459,10 @@ The extension usually receives the key first, so the preview never sees it. You 
 
   If you changed `port` or use LAN mode, adjust the address accordingly.
 
+### I use Neovim on both Windows and WSL. Which preview does the browser show?
+
+Each Neovim runs its own preview server. WSL and Windows have separate `localhost` networks, but the browser runs on Windows, so in WSL the server skips ports that are in use on Windows (checked with `netstat.exe`; see `:checkhealth md_preview`). If a URL still reaches a preview started by another Neovim, the page says "Another preview is using this port" instead of showing the other document. Set a different `port` in that case.
+
 ### Does it send my documents anywhere?
 
 No. The server listens on `127.0.0.1` only, and everything it needs is inside the binary. See [Security](#security). The only exception is `plantuml_server`: if you set it, PlantUML diagram sources are sent to that server.

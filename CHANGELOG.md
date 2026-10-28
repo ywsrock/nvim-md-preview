@@ -7,6 +7,11 @@ All notable changes are documented here. This project follows [Semantic Versioni
 ### Added
 - PlantUML diagrams in ` ```plantuml ` and ` ```puml ` blocks. They are drawn with the local `plantuml` command (or a `plantuml.jar` set in `plantuml_path`). A PlantUML server is used only when `plantuml_server` is set, so diagram sources never leave the machine by default. Diagrams are included in browser-printed PDFs. `:checkhealth md_preview` shows which one is used.
 
+### Fixed
+- WSL: when a preview was already running in Neovim on Windows, starting one in WSL opened the Windows preview instead. WSL and Windows have separate `localhost` networks, so the WSL server could take the same port, but the browser (on Windows) reached the Windows server. In WSL the server now skips ports that are in use on Windows (checked with `netstat.exe`).
+- The browser is opened after the server has picked its port, instead of after a fixed delay.
+- The URL opened in the browser carries an ID of the preview (`?instance=`). A server started by another Neovim refuses it with "Another preview is using this port" instead of showing a different document.
+
 ## [0.7.1] - 2026-10-28
 
 ### Changed

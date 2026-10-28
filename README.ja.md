@@ -459,6 +459,10 @@ Vimium、Vimium C、Tridactyl、Surfingkeys など、ブラウザに Vim 風の�
 
   `port` を変えている場合や LAN モードの場合は、アドレスを読み替えてください。
 
+### Windows と WSL の両方で Neovim を使っています。ブラウザにはどちらのプレビューが出ますか？
+
+Neovim ごとに別々のプレビューサーバーが動きます。WSL と Windows は `localhost` のネットワークが別ですが、ブラウザは Windows で動くので、WSL ではサーバーが Windows 側で使用中のポートを避けます（`netstat.exe` で確認します。`:checkhealth md_preview` を見てください）。それでも別の Neovim のプレビューにつながった場合は、その内容は出さずに「Another preview is using this port」と表示します。そのときは `port` を変えてください。
+
 ### 文書がどこかに送られることはありますか？
 
 ありません。サーバーは `127.0.0.1` でのみ待ち受け、必要なものはすべてバイナリに入っています。[セキュリティ](#セキュリティ)を見てください。例外は `plantuml_server` だけで、これを設定すると PlantUML の図のソースがそのサーバーに送られます。

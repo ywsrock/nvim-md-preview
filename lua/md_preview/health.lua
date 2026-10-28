@@ -231,6 +231,16 @@ end
 local function check_port(config)
   h.start("Server")
   h.info(string.format("port = %s (the next free port is used if it is taken)", tostring(config.port)))
+  -- WSL では Windows 側で使用中のポートを netstat.exe で調べて避ける
+  if detect_wsl() then
+    if vim.fn.executable("netstat.exe") == 1 or vim.fn.executable("/mnt/c/Windows/System32/netstat.exe") == 1 then
+      h.ok("WSL: ports in use on Windows are skipped (netstat.exe)")
+    else
+      h.warn("WSL: netstat.exe not found, so a preview running on Windows may take the same port", {
+        "Stop the preview on Windows first, or set a different port in setup()",
+      })
+    end
+  end
 end
 
 function M.check()

@@ -1,8 +1,8 @@
 //! プレビュー画面（src/preview/ の HTML・CSS・JS）、PDF 用の印刷ページ、ブラウザ向けの設定
 
 use axum::{
-    extract::State,
-    http::header,
+    extract::{RawQuery, State},
+    http::{header, StatusCode},
     response::{Html, IntoResponse, Response},
 };
 use std::sync::Arc;
@@ -19,9 +19,26 @@ pub(crate) fn static_text(content_type: &'static str, body: &'static str) -> Res
 }
 
 /// プレビューページの HTML を返す
-pub(crate) async fn preview_page() -> impl IntoResponse {
-    Html(PREVIEW_HTML)
+/// URL の ?instance= がこのサーバーの ID と違えば、別の Neovim のプレビューにつながっているので内容を出さない
+pub(crate) async fn preview_page(State(state): State<Arc<AppState>>, RawQuery(query): RawQuery) -> Response {
+    let wanted = query.as_deref().and_then(|q| q.split('&').find_map(|kv| kv.strip_prefix("instance=")));
+    if let (Some(wanted), Some(own)) = (wanted, state.access.instance.as_deref()) {
+        if wanted != own {
+            return (StatusCode::CONFLICT, Html(OTHER_PREVIEW_HTML)).into_response();
+        }
+    }
+    Html(PREVIEW_HTML).into_response()
 }
+
+/// 別のプレビューのサーバーにつながったときのページ
+const OTHER_PREVIEW_HTML: &str = r#"<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Another preview is using this port</title>
+<style>body{font:15px/1.6 -apple-system,"Segoe UI",sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem;color:#24292f}
+code{background:#f0f0f0;padding:.1em .3em;border-radius:4px}</style></head>
+<body><h1>Another preview is using this port</h1>
+<p>This address is served by a preview started from another Neovim, so the document you opened is not shown here.</p>
+<p>This can happen when Neovim on Windows and Neovim in WSL both run a preview. Stop the other preview and run <code>:MdPreview</code> again, or set a different <code>port</code> in <code>setup()</code>.</p>
+</body></html>"#;
 
 /// /print — PDF 用のページ。最新の内容と出力の設定を埋め込み、WebSocket を待たずに描画する
 pub(crate) async fn print_page(State(state): State<Arc<AppState>>) -> Response {

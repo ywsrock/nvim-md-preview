@@ -255,3 +255,19 @@ test("renders PlantUML with plantuml from PATH", async ({ page }) => {
   expect(await img.evaluate((el) => el.naturalWidth)).toBeGreaterThan(50);
   expect(decodeURIComponent(await img.getAttribute("src") ?? "")).toContain("Alice");
 });
+
+test("opens its own server and refuses a URL meant for another preview", async ({ page }) => {
+  pv = await startPreview();
+  // ブラウザを開く代わりに URL を記録する
+  pv.send(":lua require('md_preview')._open_browser = function(u) vim.g.mdp_url = u end<CR>");
+  pv.send(`:lua require('md_preview').config.auto_open = true; require('md_preview')._on_ready(${new URL(pv.url).port})<CR>`);
+  await expect.poll(() => pv.expr("get(g:, 'mdp_url', '')")).toMatch(/\/\?instance=[0-9a-f]+$/);
+  const own = pv.expr("g:mdp_url");
+  await page.goto(own);
+  await expect(page.locator("#content h1")).toHaveText(/Handbook/);
+
+  const other = own.replace(/instance=[0-9a-f]+/, "instance=0000");
+  const res = await page.goto(other);
+  expect(res?.status()).toBe(409);
+  await expect(page.locator("h1")).toHaveText("Another preview is using this port");
+});
