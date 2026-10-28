@@ -169,6 +169,7 @@ async fn handle_config(state: &AppState, params: &[rmpv::Value]) {
 
     if let Some(ex) = get(opts, "export") {
         let mut eo = state.export_opts.write().await;
+        if let Some(v) = get_str(&ex, "pdf_engine") { eo.pdf_engine = v; }
         if let Some(v) = get_str(&ex, "paper")    { eo.paper = v; }
         if let Some(v) = get_str(&ex, "margin")   { eo.margin = v; }
         if let Some(v) = get_str(&ex, "font")     { eo.font = v; }
@@ -176,6 +177,9 @@ async fn handle_config(state: &AppState, params: &[rmpv::Value]) {
         if let Some(v) = get_bool(&ex, "toc")      { eo.toc = v; }
         if let Some(v) = get_bool(&ex, "numbering") { eo.numbering = v; }
         eo.template = get_str(&ex, "template").filter(|s| !s.is_empty()).map(PathBuf::from);
+        drop(eo);
+        *state.browser_path.write().await = get_str(&ex, "browser_path").filter(|s| !s.is_empty()).map(PathBuf::from);
+        *state.typst_packages.write().await = get_str(&ex, "typst_packages").filter(|s| !s.is_empty()).map(PathBuf::from);
     }
 }
 

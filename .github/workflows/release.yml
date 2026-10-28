@@ -65,6 +65,22 @@ jobs:
             gh release create "$TAG" --draft --title "$TAG" --generate-notes
           fi
 
+      # Typst のパッケージ（cmarker）を同梱し、Typst で PDF を作るときにネットワークへ取りに行かないようにする。
+      # :MdPreviewInstall が展開すると typst-packages/preview/cmarker/<version>/ になる
+      - name: Bundle Typst packages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          CMARKER_VERSION=0.1.4
+          CMARKER_SHA256=4ad40e4861f49ed8ddf650ac87c0889b66565ef33e28d2378e66eeef2e7342d0
+          curl -fsSL --retry 3 -o cmarker.tar.gz "https://packages.typst.org/preview/cmarker-$CMARKER_VERSION.tar.gz"
+          echo "$CMARKER_SHA256  cmarker.tar.gz" | sha256sum -c -
+          mkdir -p "typst-packages/preview/cmarker/$CMARKER_VERSION"
+          tar -xzf cmarker.tar.gz -C "typst-packages/preview/cmarker/$CMARKER_VERSION"
+          tar -czf typst-packages.tar.gz typst-packages
+          gh release upload "$GITHUB_REF_NAME" typst-packages.tar.gz --clobber
+
   build:
     needs: [versions, release]
     strategy:

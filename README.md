@@ -161,10 +161,10 @@ Open the table of contents with `t` and search with `/` or Ctrl+F. The current s
 
 ### Export
 
-`:MdPreviewExport pdf` writes a PDF next to your file using Typst, with paper size, margins, fonts, a table of contents and your own template. DOCX, HTML and EPUB go through pandoc. Unsaved edits are included.
+`:MdPreviewExport pdf` writes a PDF next to your file that looks exactly like the preview: diagrams, math, callouts and highlighted code included. It prints the preview with the Chrome, Edge, Brave or Chromium already on your machine, in the background, with paper size, margins, font, a table of contents and numbered headings from your settings. DOCX, HTML and EPUB go through pandoc. Unsaved edits are included.
 
 > [!NOTE]
-> PDF export does not render Mermaid diagrams, math or callouts yet; they appear as their source text. Use the print preview when you need them on paper.
+> Without one of those browsers, PDFs are made with Typst instead (`:checkhealth md_preview` tells you which one is used). Typst output supports custom templates, but does not render Mermaid diagrams, math or callouts.
 
 ## Recipes
 
@@ -228,9 +228,28 @@ Check out the branch and run `:MdPreviewDiff main`. Every changed paragraph is m
 <details>
 <summary><b>Hand off a PDF with your company's layout</b></summary>
 
+Browser-made PDFs (the default) use the preview's styles, so `custom_css` with a print rule is all you need:
+
+```css
+/* ~/.config/nvim/preview.css */
+@media print {
+  #content { font-family: "Inter", sans-serif; }
+  #content h1 { color: #0b3d91; }
+}
+```
+
 ```lua
 require("md_preview").setup({
-  export = { paper = "a4", toc = true, numbering = true, template = "~/.config/nvim/report.typ" },
+  custom_css = "~/.config/nvim/preview.css",
+  export = { paper = "a4", toc = true, numbering = true },
+})
+```
+
+For full control over the page, use Typst and a template:
+
+```lua
+require("md_preview").setup({
+  export = { pdf_engine = "typst", template = "~/.config/nvim/report.typ" },
 })
 ```
 
@@ -315,7 +334,8 @@ require("md_preview").setup({
 | Option | Default | Description |
 |---|---|---|
 | `formats` | `{ "pdf", "docx", "html", "epub", "markdown" }` | Formats offered in the preview's Export menu and in `:MdPreviewExport` completion. `{}` hides the Export button. |
-| `pdf_engine` | `"typst"` | `"typst"` makes `:MdPreviewInstall` download Typst for PDF export. Any other value skips it. |
+| `pdf_engine` | `"browser"` | How PDFs are made. `"browser"` prints the preview with Chrome, Edge, Brave or Chromium, so the PDF looks like the preview; without one of them, Typst is used. `"typst"` always uses Typst (supports `template`, but not Mermaid, math or callouts). |
+| `browser_path` | `""` | Browser used for PDFs. Empty looks for Chrome, Edge, Brave and Chromium in their usual places and on your `PATH`. |
 | `docx_engine` | `"pandoc"` | `"pandoc"` makes `:MdPreviewInstall` download pandoc for DOCX, HTML and EPUB. Any other value skips it. |
 | `pandoc_path` | `""` | Path to pandoc. Empty uses the downloaded copy, then `pandoc` on your `PATH`. |
 | `typst_path` | `""` | Path to Typst. Empty uses the downloaded copy, then `typst` on your `PATH`. |
@@ -325,7 +345,7 @@ require("md_preview").setup({
 | `font_size` | `11` | PDF body font size in points. |
 | `toc` | `false` | Add a table of contents (PDF, DOCX, HTML, EPUB). |
 | `numbering` | `false` | Number headings (PDF, DOCX, HTML, EPUB). |
-| `template` | `""` | Typst file that exports a `template` function, applied to the whole PDF (see [Recipes](#recipes)). |
+| `template` | `""` | Typst file that exports a `template` function, applied to the whole PDF when `pdf_engine = "typst"` (see [Recipes](#recipes)). |
 
 ### Vimscript
 
@@ -360,7 +380,8 @@ require("md_preview").setup({
 
   export = {
     formats = { "pdf", "docx", "html", "epub", "markdown" },
-    pdf_engine = "typst",
+    pdf_engine = "browser",
+    browser_path = "",
     docx_engine = "pandoc",
     pandoc_path = "",
     typst_path = "",

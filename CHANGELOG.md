@@ -2,6 +2,16 @@
 
 All notable changes are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- PDFs look like the preview: `pdf_engine` now defaults to `"browser"`, which prints the preview with the Chrome, Edge, Brave or Chromium already installed (in the background, with a temporary profile). Mermaid diagrams, math, callouts, wiki links, task lists and highlighted code are all rendered, and paper, margin, font, font size, table of contents and heading numbers follow the export settings. Without one of those browsers, Typst is used as before.
+- `:MdPreviewInstall` downloads Typst only when PDFs will be made with Typst.
+
+### Added
+- `export.browser_path` to choose the browser used for PDFs; `:checkhealth md_preview` shows which one is used.
+- The Typst package used for PDFs (cmarker) is bundled with the release and installed by `:MdPreviewInstall`, so Typst no longer downloads it on the first export.
+
 ## [0.6.0] - 2026-10-28
 
 ### Changed

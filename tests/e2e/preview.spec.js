@@ -1,6 +1,8 @@
 // @ts-check
 // プレビューの動作をブラウザで確かめる。各テストは headless の Neovim でプレビューを起動し、
 // Neovim を操作しながら画面を確認する
+const fs = require("node:fs");
+const path = require("node:path");
 const { test, expect } = require("@playwright/test");
 const { startPreview } = require("./harness");
 
@@ -132,4 +134,20 @@ test("rejects other sites and paths outside the document folder", async ({ reque
   expect(absolute.status()).toBe(403);
   const rebinding = await request.get(pv.url, { headers: { Host: "evil.example" } });
   expect(rebinding.status()).toBe(403);
+});
+
+test("exports a PDF that looks like the preview", async () => {
+  // MDP_TEST_BROWSER で印刷に使うブラウザを指定できる（例: Playwright の chrome-headless-shell）
+  const browser = process.env.MDP_TEST_BROWSER;
+  pv = await startPreview(browser ? { export: { browser_path: browser } } : {});
+  test.skip(pv.expr('luaeval("require(\'md_preview\')._pdf_engine()")') !== "browser",
+    "no Chrome, Edge, Brave or Chromium on this machine");
+
+  const out = path.join(pv.dir, "out.pdf");
+  pv.send(`:MdPreviewExport pdf ${out}<CR>`);
+  await expect.poll(() => (fs.existsSync(out) ? fs.statSync(out).size : 0), { timeout: 90_000 }).toBeGreaterThan(10_000);
+  const pdf = fs.readFileSync(out);
+  expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
+  // 数式が KaTeX で描画されていれば、KaTeX のフォントが埋め込まれる（Typst の出力では元のテキストのまま）
+  expect(pdf.includes("KaTeX")).toBe(true);
 });

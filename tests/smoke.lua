@@ -30,8 +30,8 @@ end
 md.setup({ port = 1234 })
 check(md.config.port == 1234, "config.port が 1234 ではない: " .. tostring(md.config.port))
 check(type(md.config.export) == "table", "config.export がテーブルではない")
-check(md.config.export.pdf_engine == "typst",
-  "config.export.pdf_engine が 'typst' ではない: " .. tostring(md.config.export.pdf_engine))
+check(md.config.export.pdf_engine == "browser",
+  "config.export.pdf_engine が 'browser' ではない: " .. tostring(md.config.export.pdf_engine))
 check(md.config.export.docx_engine == "pandoc",
   "config.export.docx_engine が 'pandoc' ではない: " .. tostring(md.config.export.docx_engine))
 check(md.config.auto_open == true, "config.auto_open のデフォルトが true ではない")
