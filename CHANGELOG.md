@@ -2,6 +2,11 @@
 
 All notable changes are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.7.1] - 2026-10-28
+
+### Changed
+- Internal restructuring with no change in behavior: the preview page now lives in `src/preview/` (HTML, CSS and JavaScript as normal files) and the server code is split into modules. The page's CSS and JavaScript are served as `/app.css` and `/app.js`.
+
 ## [0.7.0] - 2026-10-28
 
 ### Changed
