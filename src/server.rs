@@ -66,6 +66,8 @@ pub struct AppState {
     pub typst_path: Arc<RwLock<Option<PathBuf>>>,
     /// 現在のバッファ内容（未保存分も含む。エクスポートに使用）
     pub current_content: Arc<RwLock<Option<String>>>,
+    /// 表示の仕方: "markdown"（Markdown として描画）| "code"（ハイライト付きのコード）
+    pub view_kind: Arc<RwLock<String>>,
     /// Neovim への RPC 通知チャネル（stdout に書く）
     pub nvim_tx: mpsc::UnboundedSender<NvimNotify>,
     /// Markdown 描画オプション
@@ -147,6 +149,7 @@ impl AppState {
             pandoc_path: Arc::new(RwLock::new(None)),
             typst_path: Arc::new(RwLock::new(None)),
             current_content: Arc::new(RwLock::new(None)),
+            view_kind: Arc::new(RwLock::new("markdown".to_string())),
             nvim_tx,
             render_opts: Arc::new(RwLock::new(Default::default())),
             export_opts: Arc::new(RwLock::new(ExportOptions::default())),
@@ -530,6 +533,10 @@ pub async fn export_bytes(state: &AppState, format: &str) -> Result<(Vec<u8>, St
         return Err(format!("{}: {}", "Unsupported format", format));
     };
 
+    if *state.view_kind.read().await != "markdown" {
+        return Err("Export is available for Markdown files only.".to_string());
+    }
+
     // プレビュー中の内容（未保存分も含む）を使う
     let content = state.current_content.read().await.clone()
         .ok_or_else(|| "No file is open. Start the preview with :MdPreview.".to_string())?;
@@ -912,6 +919,19 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       --color-note:#0969da;--color-tip:#1a7f37;--color-important:#8250df;--color-warning:#9a6700;--color-caution:#d1242f;
     }
     *,*::before,*::after{box-sizing:border-box}
+    /* Markdown 以外のファイル: 行番号付きのハイライトしたコード */
+    body[data-kind="code"] #content{max-width:1200px}
+    body[data-kind="code"] :is(#tocBtn,#slidesBtn,#printBtn,#exportBtn,#toc,#fm-panel){display:none!important}
+    .code-view{font:13px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--code-bg);
+      border:1px solid var(--stroke);border-radius:8px;padding:.6rem 0;overflow-x:auto}
+    .cv-line{display:flex;position:relative;min-height:1.55em;padding-right:1rem}
+    .cv-ln{flex:none;width:4.2em;padding-right:1.2em;text-align:right;color:var(--fg-muted);opacity:.6;user-select:none}
+    .cv-code{white-space:pre;font:inherit;background:none!important;padding:0!important;border:0!important}
+    /* 差分の印は行の左端に出す（コードの枠の外に出すと隠れるため） */
+    .code-view .cv-line::before{display:none}
+    .code-view .cv-line::after{left:0!important}
+    .code-view .diff-ghost{margin:.3rem 1rem}
+    .code-view .diff-ghost pre{margin:0}
     /* hidden 属性は display を指定した要素にも必ず効かせる（Export メニューの項目などを隠すため） */
     [hidden]{display:none!important}
     html{scrollbar-width:thin;scrollbar-color:var(--scroll-thumb) transparent}
@@ -1515,6 +1535,49 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
       if (pendingScroll) { scrollToLine(pendingScroll.line, pendingScroll.total); pendingScroll = null; }
     }
 
+    // ── Markdown 以外のファイル: 行番号付きのハイライトしたコード ──
+    let viewKind = 'markdown';
+    // Neovim の filetype → highlight.js の言語名（同じ名前のものは不要）
+    const LANG_ALIAS = {
+      sh: 'bash', zsh: 'bash', html: 'xml', svg: 'xml', typescriptreact: 'typescript',
+      javascriptreact: 'javascript', tex: 'latex', dosini: 'ini', conf: 'ini', make: 'makefile',
+      cs: 'csharp', jsonc: 'json', yml: 'yaml', text: 'plaintext', gitcommit: 'plaintext',
+    };
+    function escapeHtml(t) { return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+    // ハイライトした HTML を行ごとに分ける。複数行にまたがる <span> は行末で閉じ、次の行で開き直す
+    function highlightLines(text, lang) {
+      const hl = window.hljs;
+      const name = hl && [lang, LANG_ALIAS[lang]].find(l => l && hl.getLanguage(l));
+      const html = name ? hl.highlight(text, { language: name, ignoreIllegals: true }).value : escapeHtml(text);
+      const lines = [], open = [];
+      let cur = '';
+      for (const tok of html.split(/(<span[^>]*>|<\/span>|\n)/)) {
+        if (!tok) continue;
+        if (tok === '\n') { lines.push(cur + '</span>'.repeat(open.length)); cur = open.join(''); }
+        else if (tok.startsWith('<span')) { open.push(tok); cur += tok; }
+        else if (tok === '</span>') { open.pop(); cur += tok; }
+        else cur += tok;
+      }
+      lines.push(cur + '</span>'.repeat(open.length));
+      return lines;
+    }
+    async function renderCode(text, lang) {
+      const lines = highlightLines(text, lang);
+      const view = document.createElement('div');
+      view.className = 'code-view hljs';
+      // 各行に元の行番号の印を入れる（スクロール同期・クリックで移動・差分表示に使う）
+      view.innerHTML = lines.map((l, i) =>
+        `<div class="cv-line"><span class="src-line" data-line="${i + 1}"></span>` +
+        `<span class="cv-ln">${i + 1}</span><code class="cv-code">${l || ' '}</code></div>`).join('');
+      contentEl.replaceChildren(view);
+      skeleton.style.display = 'none';
+      contentEl.style.display = '';
+      applyDiff();
+      if (!searchBar.hidden && searchInput.value) runSearch();
+      positionDiffMarkers();
+      if (pendingScroll) { scrollToLine(pendingScroll.line, pendingScroll.total); pendingScroll = null; }
+    }
+
     // ── Overlay ───────────────────────────────────────────────────
     function openOverlay(svgHtml) {
       ovSvgSource = svgHtml;
@@ -1873,12 +1936,22 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
           return;
         }
 
-        // コンテンツ更新
+        // コンテンツ更新（Markdown は描画、それ以外はハイライトしたコード）
         document.title = data.title;
         titleEl.textContent = data.title;
-        updateFrontMatter(data.front_matter || null);
+        viewKind = data.kind === 'code' ? 'code' : 'markdown';
+        document.body.dataset.kind = viewKind;
         rendering = true;
-        try { await renderContent(data.html); } finally { rendering = false; }
+        try {
+          if (viewKind === 'code') {
+            updateFrontMatter(null);
+            document.body.classList.remove('toc-open');
+            await renderCode(data.text || '', data.lang || '');
+          } else {
+            updateFrontMatter(data.front_matter || null);
+            await renderContent(data.html);
+          }
+        } finally { rendering = false; }
       };
       ws.onclose = () => { statusDot.className = 'status-dot error'; statusDot.title = 'Disconnected'; setTimeout(connect, 3000); };
       ws.onerror = () => ws.close();
@@ -2292,6 +2365,24 @@ const PREVIEW_HTML: &str = r#"<!DOCTYPE html>
 
       const blocks = markerBlocks();
       const counts = { add: 0, mod: 0, del: 0 };
+      // コード表示: 行単位で印を付け、削除された行・変更前の行は折りたたみで見せる
+      if (viewKind === 'code') {
+        const rows = new Map(blocks.map(b => [b.start, b.el]));
+        for (const h of hunks) {
+          if (h.kind === 'del') {
+            const ghost = makeGhost('del', h.old_html);
+            const after = rows.get(h.s);
+            if (after) after.after(ghost); else contentEl.querySelector('.code-view')?.prepend(ghost);
+            diffTargets.push({ el: ghost, kind: 'del' });
+            continue;
+          }
+          const changed = [];
+          for (let l = h.s; l <= h.e; l++) { const r = rows.get(l); if (r) { r.classList.add('diff-' + h.kind); changed.push(r); } }
+          if (!changed.length) continue;
+          if (h.kind === 'mod' && h.old_html) changed[changed.length - 1].after(makeGhost('mod', h.old_html));
+          diffTargets.push({ el: changed[0], kind: h.kind });
+        }
+      } else
       for (const h of hunks) {
         counts[h.kind] = (counts[h.kind] || 0) + 1;
         const tops = topBlocks();

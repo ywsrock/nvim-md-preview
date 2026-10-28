@@ -45,13 +45,28 @@ The final paragraph.
 
 let nextPort = 9950;
 
-/** 一時ディレクトリに Git リポジトリと文書を作り、Neovim でプレビューを始める */
-async function startPreview(options = {}) {
+// Markdown 以外のファイルの例（コードとして表示される）
+const CODE = `local M = {}
+
+--[[ A long comment
+that spans lines ]]
+
+function M.greet(name)
+  return "hello, " .. name
+end
+
+return M
+`;
+
+/** 一時ディレクトリに Git リポジトリと文書を作り、Neovim でプレビューを始める
+ *  open: 最初に開くファイル（doc.md か app.lua） */
+async function startPreview(options = {}, open = "doc.md") {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mdp-e2e-"));
   const git = (...args) => execFileSync("git", args, { cwd: dir, stdio: "ignore" });
   git("init", "-q", "-b", "main");
   fs.writeFileSync(path.join(dir, "doc.md"), DOC);
-  git("add", "doc.md");
+  fs.writeFileSync(path.join(dir, "app.lua"), CODE);
+  git("add", "doc.md", "app.lua");
   git("-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-qm", "init");
 
   const port = nextPort++;
@@ -68,8 +83,7 @@ async function startPreview(options = {}) {
   const lua = `
     local m = require("md_preview")
     m.setup(vim.json.decode(${JSON.stringify(JSON.stringify(setup))}))
-    vim.cmd("edit " .. vim.fn.fnameescape(${JSON.stringify(path.join(dir, "doc.md"))}))
-    vim.bo.filetype = "markdown"
+    vim.cmd("edit " .. vim.fn.fnameescape(${JSON.stringify(path.join(dir, open))}))
     m.start()
   `;
   const luaFile = path.join(dir, "start.lua");
@@ -77,7 +91,8 @@ async function startPreview(options = {}) {
 
   const nvim = spawn("nvim", [
     "--headless", "--listen", socket, "-u", "NONE",
-    "--cmd", `set rtp^=${ROOT} noswapfile`,
+    "--cmd", `set rtp^=${ROOT} noswapfile hidden`,
+    "--cmd", "filetype on",
     "-c", "runtime plugin/md_preview.lua",
     "-c", `luafile ${luaFile}`,
   ], { stdio: "ignore", env: { ...process.env, XDG_DATA_HOME: path.join(dir, "data") } });
