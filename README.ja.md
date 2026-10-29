@@ -322,6 +322,7 @@ require("md_preview").setup({
 | 設定 | 既定値 | 説明 |
 |---|---|---|
 | `scroll_sync` | `true` | カーソルのあるブロックにプレビューをスクロールします。 |
+| `cursor_highlight` | `true` | カーソルがあるブロック（段落、見出し、リスト項目、表、コードブロック。コードのファイルでは行）をプレビューで枠で示します。`scroll_sync = false` でも使えます。`custom_css` の `.cursor-block` で見た目を変えられます。 |
 | `follow_buffer` | `true` | 別の Markdown バッファに移ったら、プレビューを切り替えます。 |
 | `debounce_ms` | `80` | 入力が止まってからプレビューを更新するまでの待ち時間（ミリ秒）。 |
 | `theme` | `"auto"` | `"auto"`（OS の設定に従う）、`"dark"`、`"light"`。プレビューのボタンで切り替えた場合は、そちらを記憶して優先します。 |
@@ -385,6 +386,7 @@ require("md_preview").setup({
   log_file = "",
 
   scroll_sync = true,
+  cursor_highlight = true,
   follow_buffer = true,
   debounce_ms = 80,
   theme = "auto",

@@ -246,7 +246,8 @@ async function renderContent(html) {
   await renderAllMermaid();
   await renderAllPlantuml();
   positionDiffMarkers();
-  if (pendingScroll) { scrollToLine(pendingScroll.line, pendingScroll.total); pendingScroll = null; }
+  if (pendingScroll) { scrollToLine(pendingScroll.line, pendingScroll.total, pendingScroll.sync); pendingScroll = null; }
+  else highlightCursor();
 }
 
 // ── Markdown 以外のファイル: 行番号付きのハイライトしたコード ──
@@ -289,7 +290,8 @@ async function renderCode(text, lang) {
   applyDiff();
   if (!searchBar.hidden && searchInput.value) runSearch();
   positionDiffMarkers();
-  if (pendingScroll) { scrollToLine(pendingScroll.line, pendingScroll.total); pendingScroll = null; }
+  if (pendingScroll) { scrollToLine(pendingScroll.line, pendingScroll.total, pendingScroll.sync); pendingScroll = null; }
+  else highlightCursor();
 }
 
 // ── Overlay ───────────────────────────────────────────────────
@@ -604,9 +606,39 @@ function yForLine(line, total) {
   return before.top + (nextTop - before.top) * Math.min(1, (line - before.line) / span);
 }
 
-function scrollToLine(line, total) {
+// ── カーソル行の強調 ──────────────────────────────────────────
+// Neovim のカーソルがあるブロック（段落・見出し・リスト項目・表・コードの行など）に枠を付ける
+let cursorHighlight = true;
+let cursorLine = null;  // Neovim から受け取ったカーソル行（まだ受け取っていなければ null）
+function blockForLine(line) {
+  if (viewKind === 'code') return contentEl.querySelector(`.src-line[data-line="${line}"]`)?.parentElement || null;
+  // カーソル行以下で最も近い行マーカー。同じ行なら後ろ（内側のリスト項目など）を使う
+  let best = null, bestLine = -1;
+  for (const m of contentEl.querySelectorAll('.src-line')) {
+    const l = +m.dataset.line;
+    if (l <= line && l >= bestLine && !m.closest('.diff-ghost')) { best = m; bestLine = l; }
+  }
+  if (!best) return null;
+  // リスト項目と引用はマーカーが内側の先頭にあるので、その項目自体を示す
+  if (best.parentElement.tagName === 'LI') return best.parentElement;
+  let el = best.nextElementSibling;
+  while (el && el.classList.contains('src-line')) el = el.nextElementSibling;
+  return el || (best.parentElement !== contentEl ? best.parentElement : null);
+}
+function highlightCursor() {
+  const prev = contentEl.querySelector('.cursor-block');
+  const next = cursorHighlight && cursorLine != null && !PRINT ? blockForLine(cursorLine) : null;
+  if (prev === next) return;
+  prev?.classList.remove('cursor-block');
+  next?.classList.add('cursor-block');
+}
+
+function scrollToLine(line, total, sync = true) {
   lastScroll = { line, total };
-  if (scrollSyncPaused) return;
+  cursorLine = line;
+  highlightCursor();
+  // 強調だけでスクロールしない（scroll_sync = false）か、利用者がスクロール中なら動かさない
+  if (!sync || scrollSyncPaused) return;
   // カーソル行が画面の上から 30% の位置に来るようにする
   const y = yForLine(line, total) - window.innerHeight * 0.3;
   window.scrollTo({ top: Math.max(0, y), behavior: 'instant' });
@@ -659,8 +691,8 @@ function connect() {
     // スクロール同期メッセージ
     if (data.type === 'scroll') {
       if (!slidesEl.hidden) { const i = slideForLine(data.line); if (i !== slideIdx) showSlide(i); return; }
-      if (rendering) pendingScroll = { line: data.line, total: data.total };
-      else scrollToLine(data.line, data.total);
+      if (rendering) pendingScroll = { line: data.line, total: data.total, sync: data.sync !== false };
+      else scrollToLine(data.line, data.total, data.sync !== false);
       return;
     }
     if (data.type === 'diff') {
@@ -703,6 +735,8 @@ fetch('/settings').then(r => r.json()).then(cfg => {
   configuredTheme = cfg.theme || 'auto';
   if (resolveTheme() !== currentTheme) themeBtn.click();
   browserKeys = cfg.browser_keys !== false;
+  cursorHighlight = cfg.cursor_highlight !== false;
+  highlightCursor();
   // export.formats に無い形式はメニューから外し、1 つも無ければ Export ボタンごと隠す
   if (Array.isArray(cfg.export_formats)) {
     const allowed = new Set(cfg.export_formats), menu = $('exportMenu');

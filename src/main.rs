@@ -185,6 +185,7 @@ async fn handle_config(state: &AppState, params: &[rmpv::Value]) {
 
     state.render_opts.write().await.wiki_links = get_bool(opts, "wiki_links").unwrap_or(false);
     *state.browser_keys.write().await = get_bool(opts, "browser_keys").unwrap_or(true);
+    *state.cursor_highlight.write().await = get_bool(opts, "cursor_highlight").unwrap_or(true);
     if let Some(formats) = get(opts, "export_formats").and_then(|v| v.as_array().cloned()) {
         *state.export_formats.write().await =
             formats.iter().filter_map(|f| f.as_str().map(str::to_string)).collect();
@@ -293,7 +294,7 @@ async fn handle_diff(state: &AppState, params: &[rmpv::Value]) {
     state.send_scroll(payload);
 }
 
-/// `md_preview_scroll` 処理
+/// `md_preview_scroll` 処理 — params: [line, total, sync]
 fn handle_scroll(state: &AppState, params: &[rmpv::Value]) {
     // Neovim は整数を符号付き(i64)または符号なし(u64)で送る場合がある
     let line = params.first()
@@ -302,8 +303,10 @@ fn handle_scroll(state: &AppState, params: &[rmpv::Value]) {
     let total = params.get(1)
         .and_then(|v| v.as_u64().or_else(|| v.as_i64().map(|n| n.max(1) as u64)))
         .unwrap_or(1);
+    // 3 つ目: プレビューをスクロールするか（scroll_sync）。false ならカーソル行の強調だけに使う
+    let sync = params.get(2).and_then(|v| v.as_bool()).unwrap_or(true);
     let payload = serde_json::json!({
-        "type": "scroll", "line": line, "total": total,
+        "type": "scroll", "line": line, "total": total, "sync": sync,
     }).to_string();
     state.send_scroll(payload);
 }

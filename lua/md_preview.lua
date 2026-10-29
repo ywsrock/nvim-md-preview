@@ -42,6 +42,8 @@ M.config = {
   -- プレビュー画面のキーボードショートカット（t: 目次 / "/" と Ctrl+F: 検索 / p: プレゼンモード）
   --   Vimium などブラウザの Vim 系拡張とキーがぶつかる場合は false にする（ボタンは使える）
   browser_keys = true,
+  -- Neovim のカーソルがあるブロック（段落・見出し・リスト項目・コードの行など）をプレビューで枠で示す
+  cursor_highlight = true,
   -- Git の差分をプレビューに表示する（:MdPreviewDiff で切り替え）。Git の管理外のファイルでは何もしない
   git_diff = true,
   -- 比較の基準: "HEAD" | "staged"（ステージ済みの内容）| ブランチ名・タグ・コミット
@@ -328,11 +330,12 @@ end
 
 --- Rust バイナリにカーソル行を送る（スクロール同期）
 local function send_scroll(buf)
-  if state.chan_id == nil or not M.config.scroll_sync then return end
+  -- カーソル位置はスクロール同期とカーソル行の強調に使う。どちらも無効なら送らない
+  if state.chan_id == nil or not (M.config.scroll_sync or M.config.cursor_highlight) then return end
   local line  = vim.api.nvim_win_get_cursor(0)[1]
   local total = vim.api.nvim_buf_line_count(buf)
   pcall(vim.rpcnotify, state.chan_id, "md_preview_scroll",
-    math.floor(line), math.floor(total))
+    math.floor(line), math.floor(total), M.config.scroll_sync and true or false)
 end
 
 --- PDF の印刷に使う Chromium 系ブラウザを探す（見つからなければ nil）
@@ -439,6 +442,7 @@ local function send_export_config()
     custom_css = custom_css,
     wiki_links = M.config.wiki_links,
     browser_keys = M.config.browser_keys,
+    cursor_highlight = M.config.cursor_highlight,
     export_formats = M.config.export.formats,
     plantuml_path = M._find_plantuml() or "",
     plantuml_server = M.config.plantuml_server,
