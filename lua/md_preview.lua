@@ -567,6 +567,16 @@ function M._url()
   return url
 end
 
+--- ジョブの出力（on_stdout / on_stderr の data）を行に組み立てる
+--- data の最後の要素は改行で終わっていない行の途中で、次の通知の最初の要素に続く。
+--- 戻り値: (完成した行の一覧, 行の途中)
+function M._join_lines(partial, data)
+  local lines = vim.list_slice(data)
+  lines[1] = partial .. (lines[1] or "")
+  local rest = table.remove(lines)
+  return lines, rest
+end
+
 local function start_binary()
   if state.job_id ~= nil then
     return true  -- 既に起動済み
@@ -588,6 +598,9 @@ local function start_binary()
   -- このプレビューの ID。ブラウザで開く URL に付け、別のプレビューのサーバーにつながったら
   --   （WSL と Windows で同じポートを使った場合など）サーバー側で内容を出さないようにする
   state.instance = M._random_token()
+
+  -- 標準エラーの行の途中まで（行は 1 回の通知で全部届くとは限らない）
+  local stderr_partial = ""
 
   -- Rust バイナリを RPC ジョブとして起動
   state.job_id = vim.fn.jobstart(cmd, {
@@ -612,7 +625,9 @@ local function start_binary()
       end
     end,
     on_stderr = function(_, data, _)
-      for _, line in ipairs(data) do
+      local lines
+      lines, stderr_partial = M._join_lines(stderr_partial, data)
+      for _, line in ipairs(lines) do
         if line ~= "" then
           M._log("binary: %s", line)
           -- READY:<port> でサーバーが使用しているポートを受け取る

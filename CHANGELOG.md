@@ -9,6 +9,9 @@ All notable changes are documented here. This project follows [Semantic Versioni
 - `task_toggle` option (on by default): clicking a task list checkbox in the preview toggles it in the Neovim buffer, as one undoable change. The preview sends back the buffer version it shows, and Neovim only changes the line when that version is current, so a click on an out-of-date preview never edits the wrong line. Disabled in LAN mode.
 - `log_file` option: appends start and stop, the port, the tools used, export results and errors from the binary to a file, for bug reports. Document contents are never written and the LAN token is masked.
 
+### Fixed
+- `:MdPreview` sometimes did not open the browser (since 0.8.0). The server's `READY:<port>` line could arrive in two pieces, and the plugin only recognized it when it arrived whole. Output lines from the binary are now joined before they are read, and the server writes the line in one piece.
+
 ## [0.8.2] - 2026-10-29
 
 ### Fixed
