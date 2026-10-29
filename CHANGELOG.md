@@ -2,7 +2,7 @@
 
 All notable changes are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.9.0] - 2026-10-29
 
 ### Added
 - `:MdPreviewInfo` shows the preview URL, the file, the Git diff base and which tools are used for PDF and PlantUML. `:MdPreviewInfo copy` copies the URL, which helps after closing the browser or on another device.
