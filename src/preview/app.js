@@ -559,7 +559,10 @@ function rewriteRelativeImages(root) {
     const src = img.getAttribute('src');
     // 絶対URLや data URI はスキップ
     if (!src || /^(?:[a-zA-Z][a-zA-Z0-9+.-]*:|\/\/|\/|#|data:)/.test(src)) return;
-    img.setAttribute('src', `/assets?p=${encodeURIComponent(src)}`);
+    // pulldown-cmark は日本語やスペースを %XX にして出すので、一度戻してからファイル名として渡す
+    let path = src;
+    try { path = decodeURIComponent(src); } catch (_) {}
+    img.setAttribute('src', `/assets?p=${encodeURIComponent(path)}`);
   });
 }
 
@@ -629,6 +632,23 @@ contentEl.addEventListener('click', e => {
 // ── WebSocket ─────────────────────────────────────────────────
 let wsConn = null;
 let rendering = false;
+let pendingContent = null;
+
+// コンテンツ更新（Markdown は描画、それ以外はハイライトしたコード）
+async function showContent(data) {
+  document.title = data.title;
+  titleEl.textContent = data.title;
+  viewKind = data.kind === 'code' ? 'code' : 'markdown';
+  document.body.dataset.kind = viewKind;
+  if (viewKind === 'code') {
+    updateFrontMatter(null);
+    document.body.classList.remove('toc-open');
+    await renderCode(data.text || '', data.lang || '');
+  } else {
+    updateFrontMatter(data.front_matter || null);
+    await renderContent(data.html);
+  }
+}
 function connect() {
   const ws = new WebSocket(`ws://${location.host}/ws`);
   wsConn = ws;
@@ -650,20 +670,14 @@ function connect() {
       return;
     }
 
-    // コンテンツ更新（Markdown は描画、それ以外はハイライトしたコード）
-    document.title = data.title;
-    titleEl.textContent = data.title;
-    viewKind = data.kind === 'code' ? 'code' : 'markdown';
-    document.body.dataset.kind = viewKind;
+    // 描画中に届いた内容は最新の 1 つだけ取っておき、今の描画が終わってから描く
+    //   （並行して描くと Mermaid の描画がぶつかり、スクロール位置もずれる）
+    if (rendering) { pendingContent = data; return; }
     rendering = true;
     try {
-      if (viewKind === 'code') {
-        updateFrontMatter(null);
-        document.body.classList.remove('toc-open');
-        await renderCode(data.text || '', data.lang || '');
-      } else {
-        updateFrontMatter(data.front_matter || null);
-        await renderContent(data.html);
+      for (let d = data; d; d = pendingContent) {
+        pendingContent = null;
+        await showContent(d);
       }
     } finally { rendering = false; }
   };

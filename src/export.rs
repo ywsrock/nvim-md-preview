@@ -91,14 +91,15 @@ pub async fn export_bytes(state: &AppState, format: &str) -> Result<(Vec<u8>, St
         let port = state.port.load(std::sync::atomic::Ordering::Relaxed);
         print_with_browser(&browser, port, token.as_deref(), &work).await
     } else if ext == "pdf" {
-        let typst = state.typst_path.read().await;
-        let typst_bin = typst.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|| "typst".to_string());
+        // パスはコピーしてすぐロックを外す（変換中に設定の更新を止めないように）
+        let typst = state.typst_path.read().await.clone();
+        let typst_bin = typst.map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|| "typst".to_string());
         let opts = state.export_opts.read().await.clone();
         let packages = state.typst_packages.read().await.clone();
         convert_with_typst(&typst_bin, &work, base_dir.as_deref(), &opts, packages.as_deref()).await
     } else {
-        let pandoc = state.pandoc_path.read().await;
-        let pandoc_bin = pandoc.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|| "pandoc".to_string());
+        let pandoc = state.pandoc_path.read().await.clone();
+        let pandoc_bin = pandoc.map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|| "pandoc".to_string());
         let opts = state.export_opts.read().await.clone();
         convert_with_pandoc(&pandoc_bin, &work, ext, base_dir.as_ref(), &opts).await
     };
