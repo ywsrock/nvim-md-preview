@@ -327,6 +327,7 @@ require("md_preview").setup({
 | `theme` | `"auto"` | `"auto"` follows the OS, or `"dark"` / `"light"`. A theme chosen with the button in the preview is remembered and takes precedence. |
 | `custom_css` | `""` | Path to a CSS file loaded after the built-in styles, so it can override them. |
 | `wiki_links` | `true` | Render `[[Page]]` and `[[Page\|label]]` as links that open in Neovim. |
+| `task_toggle` | `true` | Click a task list checkbox (`- [ ]`) in the preview to toggle it in the Neovim buffer, as one change you can undo. If the preview is behind the buffer (for example, right after typing), nothing is changed and you are asked to try again. Not available in LAN mode. |
 | `browser_keys` | `true` | Keyboard shortcuts in the preview (`t`, `/`, Ctrl+F, `p`). Set `false` if they clash with a browser extension such as Vimium (see [FAQ](#faq)). |
 
 ### Git diff
@@ -390,6 +391,7 @@ require("md_preview").setup({
   theme = "auto",
   custom_css = "",
   wiki_links = true,
+  task_toggle = true,
   browser_keys = true,
 
   git_diff = true,

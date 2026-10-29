@@ -131,6 +131,13 @@ Call `require("md_preview").setup(opts)`. All keys are optional; defaults:
         `true`. Render `[[Page]]` and `[[Page|label]]` as links. `.md` is
         added when the target has no extension.
 
+    task_toggle                                    *md-preview-task_toggle*
+        `true`. Click a task list checkbox (`- [ ]`) in the preview to toggle
+        it in the buffer, as one change that can be undone. If the preview
+        is behind the buffer (for example right after typing), nothing is
+        changed and a message asks you to try again. Not available in LAN
+        mode (|md-preview-host| other than localhost).
+
     browser_keys                                  *md-preview-browser_keys*
         `true`. Keyboard shortcuts in the preview page: `t`, `/`, CTRL-F and
         `p` (see |md-preview-keys|). Set `false` when they clash with a
