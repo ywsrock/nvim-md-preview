@@ -399,6 +399,8 @@ test("toggles task list items from the preview", async ({ page }) => {
   // チェックボックスのクリックで Neovim のカーソルは動かない（行への移動は文字のクリックだけ）
   pv.send("G");
   const cursor = pv.expr('line(".")');
+  // カーソル移動によるスクロールが終わってからクリックする（途中でスクロールすると別の場所に当たる）
+  await expect(page.locator("#content .cursor-block")).toHaveText(/The final paragraph/);
   await box("quoted").click();
   await expect.poll(() => line(pv, 4)).toBe("> - [x] quoted");
   expect(pv.expr('line(".")')).toBe(cursor);
