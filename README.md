@@ -286,6 +286,7 @@ Set `host = "0.0.0.0"`. Each time the preview starts, Neovim shows LAN URLs with
 | `:MarkdownPreviewToggle` | Start or stop |
 | `:MdPreviewExport {format} [path]` | Export the buffer: `pdf`, `docx`, `html`, `epub`, `markdown`. Saved next to the file unless `path` is given |
 | `:MdPreviewDiff [base]` | Toggle the Git diff, or compare with `base` (`HEAD`, `staged`, a branch, tag or commit). `off` hides it |
+| `:MdPreviewInfo [copy]` | Show the preview URL, the file, and which PDF and PlantUML tools are used. `copy` copies the URL |
 | `:MdPreviewInstall` | Download or update the binary, pandoc and Typst |
 
 In the preview: `t` table of contents, `/` or Ctrl+F search, `p` slides, click to jump. The toolbar buttons do the same. If these keys clash with a browser extension such as Vimium, set `browser_keys = false` (see [FAQ](#faq)).
@@ -314,6 +315,7 @@ require("md_preview").setup({
 | `host` | `"127.0.0.1"` | Address to listen on. `"0.0.0.0"` lets other devices on your LAN open the preview; a token is then required (see "Follow along on a tablet" in [Recipes](#recipes)). |
 | `auto_open` | `true` | Open the browser when the preview starts. |
 | `binary` | Downloaded copy in `stdpath("data")/nvim-md-preview/` | Path to the preview binary. Set it when you build from source. |
+| `log_file` | `""` | File to append a log to: start and stop, the port, the tools used, export results and errors from the binary. Document contents are never written, and the LAN token is masked. Empty writes nothing. Useful for bug reports. |
 
 ### Preview
 
@@ -380,6 +382,7 @@ require("md_preview").setup({
   port = 9876,
   host = "127.0.0.1",
   auto_open = true,
+  log_file = "",
 
   scroll_sync = true,
   follow_buffer = true,

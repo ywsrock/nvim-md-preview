@@ -73,6 +73,15 @@ end, {
   complete = function(arg_lead) return require("md_preview")._diff_complete(arg_lead) end,
 })
 
+vim.api.nvim_create_user_command("MdPreviewInfo", function(opts)
+  local m = ensure_setup()
+  if m then m.show_info(opts.args) end
+end, {
+  nargs = "?",
+  desc = "Show the preview's URL and settings: :MdPreviewInfo [copy]",
+  complete = function() return { "copy" } end,
+})
+
 vim.api.nvim_create_user_command("MdPreviewInstall", function()
   local ok, m = pcall(require, "md_preview")
   if ok then m.install() end

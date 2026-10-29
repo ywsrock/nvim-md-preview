@@ -81,6 +81,11 @@ tools and how the browser is opened.
     Download the preview binary, pandoc and Typst in parallel. Progress is
     shown on the command line and a summary is shown when done.
 
+:MdPreviewInfo [copy]                                      *:MdPreviewInfo*
+    Show the preview URL, the file being previewed, the Git diff base, and
+    which tools are used for PDF and PlantUML. With `copy`, copy the URL to
+    the clipboard (`+` register) and the unnamed register.
+
 ==============================================================================
 4. CONFIGURATION                                   *md-preview-configuration*
 
@@ -159,6 +164,11 @@ Call `require("md_preview").setup(opts)`. All keys are optional; defaults:
 
     binary                                              *md-preview-binary*
         Path to the preview binary. Defaults to the downloaded copy.
+
+    log_file                                          *md-preview-log_file*
+        `""`. File to append a log to: start and stop, the port, the tools
+        used, export results and errors from the binary. Document contents
+        are never written and the LAN token is masked. Empty writes nothing.
 
     export                                       *md-preview-export-config*
         See |md-preview-export|.
