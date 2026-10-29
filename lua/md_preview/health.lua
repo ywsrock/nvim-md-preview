@@ -231,6 +231,15 @@ end
 local function check_port(config)
   h.start("Server")
   h.info(string.format("port = %s (the next free port is used if it is taken)", tostring(config.port)))
+  if config.log_file ~= nil and config.log_file ~= "" then
+    local path = vim.fn.expand(config.log_file)
+    local dir = vim.fn.fnamemodify(path, ":h")
+    if vim.fn.isdirectory(dir) == 1 and vim.fn.filewritable(dir) == 2 then
+      h.ok("Log file: " .. path)
+    else
+      h.warn("Log file: cannot write to " .. path, { "Check log_file in setup()" })
+    end
+  end
   -- WSL では Windows 側で使用中のポートを netstat.exe で調べて避ける
   if detect_wsl() then
     if vim.fn.executable("netstat.exe") == 1 or vim.fn.executable("/mnt/c/Windows/System32/netstat.exe") == 1 then

@@ -346,3 +346,31 @@ test("keeps working when stopped and started again quickly", async ({ page }) =>
   await expect(page.locator("#content")).toContainText("Still connected.");
   expect(pv.expr("execute('messages')")).not.toContain("The binary exited");
 });
+
+test("shows the preview URL with :MdPreviewInfo and writes the log file", async ({ page }) => {
+  const os = require("node:os");
+  const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "mdp-log-"));
+  const log = path.join(logDir, "mdp.log");
+  try {
+    pv = await startPreview({ log_file: log });
+    await expect.poll(() => pv.expr("luaeval('require(\"md_preview\").info().url or \"\"')")).toMatch(/instance=/);
+    const url = pv.expr("luaeval('require(\"md_preview\").info().url')");
+    await page.goto(url);
+    await expect(page.locator("#content h1")).toHaveText(/Handbook/);
+
+    const shown = pv.expr("execute('MdPreviewInfo')");
+    expect(shown).toContain(url);
+    expect(shown).toContain("doc.md (markdown)");
+    pv.send(":MdPreviewInfo copy<CR>");
+    await expect.poll(() => pv.expr("getreg('\"')")).toBe(url);
+
+    const text = fs.readFileSync(log, "utf8");
+    expect(text).toMatch(/started: .*nvim-md-preview/);
+    expect(text).toMatch(/binary: READY:\d+/);
+    expect(text).toContain("doc.md");
+    // 文書の内容は書かない
+    expect(text).not.toContain("Handbook");
+  } finally {
+    fs.rmSync(logDir, { recursive: true, force: true });
+  }
+});

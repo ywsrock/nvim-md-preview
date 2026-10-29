@@ -286,6 +286,7 @@ require("md_preview").setup({
 | `:MarkdownPreviewToggle` | 開始 / 停止を切り替え |
 | `:MdPreviewExport {形式} [path]` | バッファを出力：`pdf` `docx` `html` `epub` `markdown`。`path` を省略するとファイルの隣に保存 |
 | `:MdPreviewDiff [基準]` | Git の差分の表示を切り替え。`基準`（`HEAD`、`staged`、ブランチ・タグ・コミット）を指定するとそれと比較。`off` で非表示 |
+| `:MdPreviewInfo [copy]` | プレビューの URL、対象のファイル、PDF と PlantUML に使うものを表示。`copy` で URL をコピー |
 | `:MdPreviewInstall` | バイナリ・pandoc・Typst をダウンロード / 更新 |
 
 プレビューでは、`t` で目次、`/` か Ctrl+F で検索、`p` でスライド、クリックで該当行へ移動します。ツールバーのボタンでも同じ操作ができます。これらのキーが Vimium などのブラウザ拡張とぶつかる場合は `browser_keys = false` にしてください（[FAQ](#faq) を参照）。
@@ -314,6 +315,7 @@ require("md_preview").setup({
 | `host` | `"127.0.0.1"` | 待ち受けるアドレス。`"0.0.0.0"` にすると LAN 内の別端末から見られます。その場合はトークンが必要になります（[レシピ](#レシピ)の「タブレットで一緒に見る」を参照）。 |
 | `auto_open` | `true` | プレビューの開始時にブラウザを開きます。 |
 | `binary` | `stdpath("data")/nvim-md-preview/` にダウンロードしたもの | プレビュー用バイナリのパス。ソースからビルドしたときに指定します。 |
+| `log_file` | `""` | ログを追記するファイル。起動と停止、ポート、使うツール、出力の結果、バイナリのエラーを記録します。文書の内容は書かず、LAN 用のトークンは伏せます。空なら何も書きません。バグ報告に便利です。 |
 
 ### プレビュー
 
@@ -380,6 +382,7 @@ require("md_preview").setup({
   port = 9876,
   host = "127.0.0.1",
   auto_open = true,
+  log_file = "",
 
   scroll_sync = true,
   follow_buffer = true,

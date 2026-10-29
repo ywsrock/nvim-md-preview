@@ -53,6 +53,9 @@ M.config = {
   -- PlantUML サーバーの URL（例: "https://www.plantuml.com/plantuml"）。設定したときだけ、
   --   図のソースをこのサーバーに送って描く。空ならサーバーは使わない
   plantuml_server = "",
+  -- 動作のログを書くファイル（空なら書かない）。起動・停止・ポート・エクスポートの結果・
+  --   バイナリのエラーを記録する。文書の内容は書かない
+  log_file = "",
 
   -- エクスポート設定
   export = {
@@ -428,6 +431,9 @@ local function send_export_config()
     end
   end
 
+  M._log("tools: pandoc=%s typst=%s pdf=%s plantuml=%s", pandoc_path ~= "" and pandoc_path or "-",
+    typst_path ~= "" and typst_path or "-", ex.pdf_engine == "browser" and (M._find_browser() or "typst") or ex.pdf_engine,
+    M.config.plantuml_server ~= "" and M.config.plantuml_server or (M._find_plantuml() or "-"))
   pcall(vim.rpcnotify, state.chan_id, "md_preview_config", pandoc_path, typst_path, {
     theme      = M.config.theme,
     custom_css = custom_css,
@@ -457,6 +463,7 @@ local function attach_buffer(buf)
   if state.buf_id == buf then return end
 
   state.buf_id = buf
+  M._log("preview: %s", vim.api.nvim_buf_get_name(buf))
 
   -- テキスト変更イベント（同じバッファに二重登録しない。
   -- 監視対象でなくなったバッファの変更は state.buf_id の比較で無視する）
@@ -494,6 +501,27 @@ local function attach_buffer(buf)
 end
 
 --- Rust バイナリを起動する
+--- log_file にログを 1 行追記する（log_file が空なら何もしない）
+--- LAN 用のトークンは伏せる（ログをバグ報告に貼っても漏れないように）
+function M._log(fmt, ...)
+  local file = M.config.log_file
+  if file == nil or file == "" then return end
+  local msg = select("#", ...) > 0 and string.format(fmt, ...) or fmt
+  if state.token then msg = msg:gsub(vim.pesc(state.token), "<token>") end
+  local f = io.open(vim.fn.expand(file), "a")
+  if not f then return end
+  f:write(os.date("%Y-%m-%d %H:%M:%S "), msg, "\n")
+  f:close()
+end
+
+--- ブラウザで開く URL（サーバーがまだポートを決めていなければ nil）
+function M._url()
+  if state.job_id == nil or state.actual_port == nil then return nil end
+  local url = string.format("http://127.0.0.1:%d/?instance=%s", state.actual_port, state.instance)
+  if state.token then url = url .. "&token=" .. state.token end
+  return url
+end
+
 local function start_binary()
   if state.job_id ~= nil then
     return true  -- 既に起動済み
@@ -524,6 +552,7 @@ local function start_binary()
       -- :MdPreviewStop で止めたジョブや、再起動前の古いジョブの終了は無視する
       --   （ここで状態を消すと、新しく起動したプレビューが動かなくなる）
       if job_id ~= state.job_id then return end
+      M._log("the binary exited (exit: %d)", exit_code)
       vim.notify(
         string.format("[md-preview] The binary exited (exit: %d)", exit_code),
         vim.log.levels.WARN
@@ -540,6 +569,7 @@ local function start_binary()
     on_stderr = function(_, data, _)
       for _, line in ipairs(data) do
         if line ~= "" then
+          M._log("binary: %s", line)
           -- READY:<port> でサーバーが使用しているポートを受け取る
           local port_str = line:match("^READY:(%d+)$")
           if port_str then
@@ -553,9 +583,11 @@ local function start_binary()
 
   if state.job_id <= 0 then
     vim.notify(string.format("[md-preview] Failed to start the binary: %s", M.config.binary), vim.log.levels.ERROR)
+    M._log("failed to start the binary: %s", M.config.binary)
     state.job_id = nil
     return false
   end
+  M._log("started: %s (plugin v%s, port %s, host %s)", M.config.binary, M.version, M.config.port, M.config.host)
 
   state.chan_id = state.job_id
   return true
@@ -642,9 +674,8 @@ end
 --- サーバーが待ち受けを始めたら（READY:<port>）ブラウザを開く
 --- ポートは WSL で Windows 側の使用中のポートを避けるなどして変わることがあるので、決まってから開く
 function M._on_ready(port)
-  local url = string.format("http://127.0.0.1:%d/?instance=%s", port, state.instance)
+  local url = M._url() or string.format("http://127.0.0.1:%d/?instance=%s", port, state.instance)
   if state.token then
-    url = url .. "&token=" .. state.token
     local lan = M._lan_addresses()
     if #lan > 0 then
       local urls = vim.tbl_map(function(ip)
@@ -721,6 +752,7 @@ function M.stop()
     state.update_timer:close()
     state.update_timer = nil
   end
+  M._log("stopped")
   vim.notify("[md-preview] Preview stopped", vim.log.levels.INFO)
 end
 
@@ -826,11 +858,13 @@ function M.export(format, path)
   -- 最新のバッファ内容を送ってから変換する（未保存の変更も含める）
   send_update(state.buf_id)
   vim.notify(string.format("[md-preview] Converting to %s...", format:upper()), vim.log.levels.INFO)
+  M._log("export %s: %s", format, path)
   pcall(vim.rpcnotify, state.chan_id, "md_preview_export", format, path)
 end
 
 --- エクスポート完了通知（バイナリから nvim_exec_lua 経由で呼ばれる）
 function M._on_export_done(ok, path, err)
+  M._log("export %s: %s%s", ok and "done" or "failed", path, ok and "" or ("\n" .. (err or "")))
   if ok then
     vim.notify(string.format("[md-preview] Saved: %s", path), vim.log.levels.INFO)
   else
@@ -1170,6 +1204,59 @@ function M.install(opts)
     return result
   end
   return true
+end
+
+--- プレビューの状態（:MdPreviewInfo で表示する内容）
+function M.info()
+  local buf = state.buf_id
+  local file = (buf and vim.api.nvim_buf_is_valid(buf)) and vim.api.nvim_buf_get_name(buf) or nil
+  local plantuml
+  if M.config.plantuml_server ~= "" then
+    plantuml = "server " .. M.config.plantuml_server
+  else
+    plantuml = M._find_plantuml() or "not found"
+  end
+  return {
+    running = state.job_id ~= nil,
+    url = M._url(),
+    port = state.actual_port,
+    instance = state.instance,
+    file = file ~= "" and file or nil,
+    kind = buf and vim.api.nvim_buf_is_valid(buf) and M._view_kind(buf) or nil,
+    git_diff = M.config.git_diff and M.config.git_diff_base or false,
+    pdf_engine = M._pdf_engine(),
+    plantuml = plantuml,
+    log_file = M.config.log_file ~= "" and vim.fn.expand(M.config.log_file) or nil,
+    version = M.version,
+  }
+end
+
+--- :MdPreviewInfo [copy] — 状態を表示する。copy なら URL をクリップボードにコピーする
+function M.show_info(arg)
+  local i = M.info()
+  if arg == "copy" then
+    if not i.url then
+      vim.notify("[md-preview] The preview is not running", vim.log.levels.WARN)
+      return
+    end
+    vim.fn.setreg("+", i.url)
+    vim.fn.setreg('"', i.url)
+    vim.notify("[md-preview] Copied: " .. i.url, vim.log.levels.INFO)
+    return
+  end
+  local rows = {
+    { "Status", i.running and "running" or "stopped" },
+    { "URL", i.url or "-" },
+    { "File", i.file and (i.file .. " (" .. (i.kind or "?") .. ")") or "-" },
+    { "Git diff", i.git_diff and ("vs " .. i.git_diff) or "off" },
+    { "PDF", i.pdf_engine },
+    { "PlantUML", i.plantuml },
+    { "Log file", i.log_file or "off" },
+    { "Version", "v" .. i.version },
+  }
+  local lines = { "[md-preview]" }
+  for _, r in ipairs(rows) do table.insert(lines, string.format("  %-9s %s", r[1], r[2])) end
+  vim.notify(table.concat(lines, "\n"), vim.log.levels.INFO)
 end
 
 --- セットアップ関数（lazy.nvim などから呼ぶ）
