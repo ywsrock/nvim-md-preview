@@ -41,7 +41,9 @@ code{background:#f0f0f0;padding:.1em .3em;border-radius:4px}</style></head>
 </body></html>"#;
 
 /// /print — PDF 用のページ。最新の内容と出力の設定を埋め込み、WebSocket を待たずに描画する
-pub(crate) async fn print_page(State(state): State<Arc<AppState>>) -> Response {
+/// /print?slides=1 はスライドを 1 枚 1 ページで印刷する
+pub(crate) async fn print_page(State(state): State<Arc<AppState>>, RawQuery(query): RawQuery) -> Response {
+    let slides = query.as_deref().is_some_and(|q| q.split('&').any(|kv| kv == "slides=1"));
     let content = state.latest_html.read().await.clone().unwrap_or_else(|| "null".to_string());
     let opts = state.export_opts.read().await.clone();
     let options = serde_json::json!({
@@ -51,6 +53,8 @@ pub(crate) async fn print_page(State(state): State<Arc<AppState>>) -> Response {
         "font_size": opts.font_size,
         "toc": opts.toc,
         "numbering": opts.numbering,
+        "slides": slides,
+        "slide_size": opts.slide_size,
     });
     // 文書の中の "</script>" でスクリプトが途中で閉じないようにする
     const APP_SCRIPT: &str = r#"<script type="module" src="/app.js"></script>"#;

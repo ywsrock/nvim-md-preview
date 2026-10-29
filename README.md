@@ -148,7 +148,7 @@ Open the table of contents with `t` and search with `/` or Ctrl+F. The current s
   <img alt="Presentation mode" src="docs/media/slides-light.png">
 </picture>
 
-**Slides.** Press `p` to present the document, split on `---` or on headings. The slide follows your cursor.
+**Slides.** Press `p` to present the document, split on `---` or on headings. The slide follows your cursor. `:MdPreviewExport slides` saves them as a PDF, one slide per page.
 
 </td>
 <td width="50%" valign="top">
@@ -284,7 +284,7 @@ Set `host = "0.0.0.0"`. Each time the preview starts, Neovim shows LAN URLs with
 | `:MarkdownPreview` / `:MdPreview` | Start the preview |
 | `:MarkdownPreviewStop` / `:MdPreviewStop` | Stop it |
 | `:MarkdownPreviewToggle` | Start or stop |
-| `:MdPreviewExport {format} [path]` | Export the buffer: `pdf`, `docx`, `html`, `epub`, `markdown`. Saved next to the file unless `path` is given |
+| `:MdPreviewExport {format} [path]` | Export the buffer: `pdf`, `slides` (PDF, one slide per page), `docx`, `html`, `epub`, `markdown`. Saved next to the file unless `path` is given |
 | `:MdPreviewDiff [base]` | Toggle the Git diff, or compare with `base` (`HEAD`, `staged`, a branch, tag or commit). `off` hides it |
 | `:MdPreviewInfo [copy]` | Show the preview URL, the file, and which PDF and PlantUML tools are used. `copy` copies the URL |
 | `:MdPreviewInstall` | Download or update the binary, pandoc and Typst |
@@ -351,7 +351,7 @@ require("md_preview").setup({
 
 | Option | Default | Description |
 |---|---|---|
-| `formats` | `{ "pdf", "docx", "html", "epub", "markdown" }` | Formats offered in the preview's Export menu and in `:MdPreviewExport` completion. `{}` hides the Export button. |
+| `formats` | `{ "pdf", "slides", "docx", "html", "epub", "markdown" }` | Formats offered in the preview's Export menu and in `:MdPreviewExport` completion. `{}` hides the Export button. |
 | `pdf_engine` | `"browser"` | How PDFs are made. `"browser"` prints the preview with Chrome, Edge, Brave or Chromium, so the PDF looks like the preview; without one of them, Typst is used. `"typst"` always uses Typst (supports `template`, but not Mermaid, math or callouts). |
 | `browser_path` | `""` | Browser used for PDFs. Empty looks for Chrome, Edge, Brave and Chromium in their usual places and on your `PATH`. |
 | `docx_engine` | `"pandoc"` | `"pandoc"` makes `:MdPreviewInstall` download pandoc for DOCX, HTML and EPUB. Any other value skips it. |
@@ -363,6 +363,7 @@ require("md_preview").setup({
 | `font_size` | `11` | PDF body font size in points. |
 | `toc` | `false` | Add a table of contents (PDF, DOCX, HTML, EPUB). |
 | `numbering` | `false` | Number headings (PDF, DOCX, HTML, EPUB). |
+| `slide_size` | `"16:9"` | Page shape of `:MdPreviewExport slides`: `"16:9"` (13.33 x 7.5 in) or `"4:3"` (10 x 7.5 in). Slides are printed with Chrome, Edge, Brave or Chromium, whatever `pdf_engine` is; a slide too long for one page is scaled down to fit. |
 | `template` | `""` | Typst file that exports a `template` function, applied to the whole PDF when `pdf_engine = "typst"` (see [Recipes](#recipes)). |
 
 ### Vimscript
@@ -406,7 +407,7 @@ require("md_preview").setup({
   plantuml_server = "",
 
   export = {
-    formats = { "pdf", "docx", "html", "epub", "markdown" },
+    formats = { "pdf", "slides", "docx", "html", "epub", "markdown" },
     pdf_engine = "browser",
     browser_path = "",
     docx_engine = "pandoc",
@@ -418,6 +419,7 @@ require("md_preview").setup({
     font_size = 11,
     toc = false,
     numbering = false,
+    slide_size = "16:9",
     template = "",
   },
 })

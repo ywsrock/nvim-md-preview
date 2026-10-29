@@ -139,6 +139,13 @@ local function check_export(config)
   else
     check_engine("typst", export.typst_path, "PDF")
   end
+  -- スライドの PDF は pdf_engine に関係なくブラウザで作る
+  local browser = md._find_browser()
+  if browser then
+    h.ok(string.format("Slides PDF: printed with %s", browser))
+  else
+    h.info("Slides PDF is unavailable: it needs Chrome, Edge, Brave or Chromium (or export.browser_path)")
+  end
 end
 
 --- PlantUML（```plantuml のコードブロック）

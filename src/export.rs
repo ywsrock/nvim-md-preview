@@ -9,7 +9,7 @@ use serde::Deserialize;
 use std::{path::{Path, PathBuf}, sync::Arc};
 use crate::state::{AppState, ExportOptions};
 
-/// /export?format=pdf|docx|html|epub|markdown — エクスポートハンドラ
+/// /export?format=pdf|slides|docx|html|epub|markdown — エクスポートハンドラ
 #[derive(Deserialize)]
 pub(crate) struct ExportParams {
     format: String,
@@ -33,6 +33,8 @@ pub(crate) fn extension_for(format: &str) -> Option<&'static str> {
         "html" => Some("html"),
         "epub" => Some("epub"),
         "pdf"  => Some("pdf"),
+        // スライドの PDF（1 枚 1 ページ。ブラウザで印刷する）
+        "slides" => Some("pdf"),
         _ => None,
     }
 }
@@ -69,7 +71,11 @@ pub async fn export_bytes(state: &AppState, format: &str) -> Result<(Vec<u8>, St
         .and_then(|s| s.to_str())
         .unwrap_or("export")
         .to_string();
-    let filename = format!("{}.{}", stem, ext);
+    let filename = if format == "slides" {
+        format!("{}.slides.pdf", stem)
+    } else {
+        format!("{}.{}", stem, ext)
+    };
 
     if ext == "md" {
         return Ok((content.into_bytes(), filename));
@@ -85,11 +91,16 @@ pub async fn export_bytes(state: &AppState, format: &str) -> Result<(Vec<u8>, St
 
     let browser = state.browser_path.read().await.clone();
     let pdf_engine = state.export_opts.read().await.pdf_engine.clone();
-    let print_browser = browser.filter(|_| ext == "pdf" && pdf_engine == "browser");
-    let result = if let Some(browser) = print_browser {
-        let token = state.access.token.clone();
-        let port = state.port.load(std::sync::atomic::Ordering::Relaxed);
-        print_with_browser(&browser, port, token.as_deref(), &work).await
+    let token = state.access.token.clone();
+    let port = state.port.load(std::sync::atomic::Ordering::Relaxed);
+    let result = if format == "slides" {
+        // スライドはブラウザでしか作れない（Typst には無い）
+        match browser {
+            Some(browser) => print_with_browser(&browser, port, token.as_deref(), &work, "slides=1").await,
+            None => Err("Slides PDF needs Chrome, Edge, Brave or Chromium. Install one, or set export.browser_path.".to_string()),
+        }
+    } else if let Some(browser) = browser.filter(|_| ext == "pdf" && pdf_engine == "browser") {
+        print_with_browser(&browser, port, token.as_deref(), &work, "").await
     } else if ext == "pdf" {
         // パスはコピーしてすぐロックを外す（変換中に設定の更新を止めないように）
         let typst = state.typst_path.read().await.clone();
@@ -170,11 +181,16 @@ pub(crate) async fn convert_with_pandoc(
 
 /// Chromium 系ブラウザを画面なしで起動し、/print を PDF に書き出す
 /// ふだん使っているブラウザに影響しないよう、一時ディレクトリのプロフィールで起動する
-pub(crate) async fn print_with_browser(browser: &Path, port: u16, token: Option<&str>, work: &Path) -> Result<Vec<u8>, String> {
+/// query: /print に付ける問い合わせ（"slides=1" ならスライドを 1 枚 1 ページで印刷する）
+pub(crate) async fn print_with_browser(browser: &Path, port: u16, token: Option<&str>, work: &Path, query: &str) -> Result<Vec<u8>, String> {
     let pdf_path = work.join("output.pdf");
-    let url = match token {
-        Some(t) => format!("http://127.0.0.1:{}/print?token={}", port, t),
-        None => format!("http://127.0.0.1:{}/print", port),
+    let mut params: Vec<String> = Vec::new();
+    if !query.is_empty() { params.push(query.to_string()); }
+    if let Some(t) = token { params.push(format!("token={}", t)); }
+    let url = if params.is_empty() {
+        format!("http://127.0.0.1:{}/print", port)
+    } else {
+        format!("http://127.0.0.1:{}/print?{}", port, params.join("&"))
     };
     let run = |no_sandbox: bool| {
         let mut cmd = tokio::process::Command::new(browser);

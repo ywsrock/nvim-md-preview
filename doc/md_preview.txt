@@ -61,9 +61,11 @@ tools and how the browser is opened.
 
 :MdPreviewExport {format} [{path}]                        *:MdPreviewExport*
     Export the buffer being previewed, including unsaved changes. {format}
-    is one of `pdf`, `docx`, `html`, `epub`, `markdown`. Without {path} the
-    file is written next to the source with the new extension (`markdown`
-    uses `{name}.export.md`). Exporting onto the file being edited is
+    is one of `pdf`, `slides`, `docx`, `html`, `epub`, `markdown`. `slides`
+    writes a PDF with one slide per page (see |md-preview-export-config|
+    `slide_size`). Without {path} the file is written next to the source
+    with the new extension (`markdown` uses `{name}.export.md`, `slides`
+    uses `{name}.slides.pdf`). Exporting onto the file being edited is
     refused. The preview must be running.
 
 :MdPreviewDiff [{base}]                                     *:MdPreviewDiff*
@@ -219,7 +221,7 @@ it again to print.
 PDF uses Typst, DOCX / HTML / EPUB use pandoc. Both are downloaded by
 |:MdPreviewInstall|. Options under `export`:
 
-    formats         `{ "pdf", "docx", "html", "epub", "markdown" }`. Formats
+    formats         `{ "pdf", "slides", "docx", "html", "epub", "markdown" }`. Formats
                     offered in the preview's Export menu and in
                     |:MdPreviewExport| completion. `{}` hides the Export
                     button.
@@ -239,6 +241,9 @@ PDF uses Typst, DOCX / HTML / EPUB use pandoc. Both are downloaded by
     font_size       `11` (pt).
     toc             `false`. Add a table of contents (PDF and pandoc).
     numbering       `false`. Number headings (PDF and pandoc).
+    slide_size      `"16:9"` or `"4:3"`. Page shape of `slides`. Slides are
+                    printed with a Chromium browser whatever `pdf_engine`
+                    is; a slide too long for a page is scaled down.
     template        `""`. With `pdf_engine = "typst"`, a Typst file exporting
                     `template`, applied as a show rule:
 >typst

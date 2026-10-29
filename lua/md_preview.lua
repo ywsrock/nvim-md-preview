@@ -75,7 +75,7 @@ M.config = {
     -- DOCX/HTML/EPUB エンジン: "pandoc"。それ以外にすると pandoc をダウンロードしない
     docx_engine = "pandoc",
     -- プレビューの Export メニューと :MdPreviewExport の補完に出す形式（空にすると Export ボタンを隠す）
-    formats = { "pdf", "docx", "html", "epub", "markdown" },
+    formats = { "pdf", "slides", "docx", "html", "epub", "markdown" },
     -- バイナリパス（空の場合は自動ダウンロード先 ~/.local/share/nvim/nvim-md-preview/ を使用）
     pandoc_path = "",
     typst_path  = "",
@@ -87,6 +87,8 @@ M.config = {
     font_size = 11,     -- 本文サイズ pt（PDF）
     toc       = false,  -- 目次を入れる
     numbering = false,  -- 見出しに番号を付ける
+    -- スライドの PDF（:MdPreviewExport slides）の縦横比: "16:9" | "4:3"
+    slide_size = "16:9",
     -- Typst テンプレート（PDF）。`template` 関数を export した .typ ファイル
     --   例: #let template(doc) = { set page(header: [社外秘]); doc }
     template  = "",
@@ -496,7 +498,10 @@ local function send_export_config()
     plantuml_server = M.config.plantuml_server,
     export = {
       pdf_engine = ex.pdf_engine,
-      browser_path = ex.pdf_engine == "browser" and (M._find_browser() or "") or "",
+      -- スライドの PDF は pdf_engine に関係なくブラウザで作るので、常に送る
+      --   （PDF に使うかどうかはバイナリが pdf_engine を見て決める）
+      browser_path = M._find_browser() or "",
+      slide_size = ex.slide_size,
       -- :MdPreviewInstall で同梱した Typst のパッケージ（無ければ Typst が初回にネットワークから取得する）
       typst_packages = vim.fn.isdirectory(install_dir .. "/typst-packages") == 1 and (install_dir .. "/typst-packages") or "",
       paper     = ex.paper,
@@ -887,7 +892,7 @@ function M._open_link(path)
 end
 
 --- エクスポート対応形式
-M.export_formats = { "pdf", "docx", "html", "epub", "markdown" }
+M.export_formats = { "pdf", "slides", "docx", "html", "epub", "markdown" }
 
 --- プレビュー中の内容を指定形式で書き出す（:MdPreviewExport コマンドから呼ぶ）
 --- path を省略するとプレビュー中ファイルと同じ場所に同じ名前で保存する
@@ -912,7 +917,7 @@ function M.export(format, path)
       return
     end
     -- Markdown は元のファイルと同じ名前にならないよう <name>.export.md にする
-    local ext = format == "markdown" and "export.md" or format
+    local ext = ({ markdown = "export.md", slides = "slides.pdf" })[format] or format
     path = vim.fn.fnamemodify(name, ":r") .. "." .. ext
   end
   path = vim.fn.fnamemodify(vim.fn.expand(path), ":p")

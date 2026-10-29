@@ -54,7 +54,7 @@ vim.api.nvim_create_user_command("MdPreviewExport", function(opts)
   if m then m.export(opts.fargs[1], opts.fargs[2]) end
 end, {
   nargs = "+",
-  desc = "Export the previewed buffer: :MdPreviewExport {pdf|docx|html|epub|markdown} [path]",
+  desc = "Export the previewed buffer: :MdPreviewExport {pdf|slides|docx|html|epub|markdown} [path]",
   complete = function(arg_lead, cmdline)
     -- 1 つ目の引数は形式、2 つ目はファイルパス
     local argc = #vim.split(vim.trim(cmdline), "%s+") - (cmdline:match("%s$") and 0 or 1)

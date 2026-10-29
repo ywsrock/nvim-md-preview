@@ -132,6 +132,14 @@ header h1{margin:0;font-size:.9rem;font-weight:600;letter-spacing:.2px;flex:1;
 :is(#content,#slideBody) .code-wrap .copy-btn:hover{color:var(--fg);background:rgba(127,127,127,.15)}
 :is(#content,#slideBody) .code-wrap .copy-btn.copied{color:#3fb950}
 :is(#content,#slideBody) .code-wrap .code-lang ~ .copy-btn{top:26px}
+/* スライドの PDF（/print?slides=1）: 1 枚 1 ページ。大きさは app.js が用紙に合わせて決める */
+body.print-slides #content{max-width:none;margin:0;padding:0}
+.print-slide{position:relative;overflow:hidden;break-after:page;box-sizing:border-box;background:#fff}
+.print-slide:last-child{break-after:auto}
+.print-slide-body{position:absolute;inset:.45in .7in .55in;display:flex;flex-direction:column;justify-content:center;overflow:hidden}
+.print-slide-fit{font-size:22px}
+.print-slide-fit>*:first-child{margin-top:0}
+.print-slide-num{position:absolute;right:.4in;bottom:.2in;font-size:11px;color:#6b7280}
 /* カーソル行の強調: 差分の印（左側の ::before / ::after）と重ならないよう、枠（outline）で示す */
 #content .cursor-block{outline:1.5px solid color-mix(in srgb,var(--accent) 45%,transparent);outline-offset:4px;
   border-radius:4px;transition:outline-color .15s ease}
