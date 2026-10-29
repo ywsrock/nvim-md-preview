@@ -506,6 +506,7 @@ local function start_binary()
     M.config.host,
   }
   state.token = nil
+  state.actual_port = nil
   if not M._is_loopback(M.config.host) then
     state.token = M._random_token()
     table.insert(cmd, state.token)
@@ -586,6 +587,8 @@ function M.start()
   end
 
   M._check_binary_version()
+  -- サーバーが既に動いている（ブラウザのタブを閉じただけ）なら、READY は来ないので後でここから開き直す
+  local running = state.job_id ~= nil and state.actual_port ~= nil
   if not start_binary() then return end
 
   -- 設定（描画オプション・テーマなど）を最初の内容より先に送る。
@@ -628,6 +631,9 @@ function M.start()
     send_export_config()
   end, 600)
 
+  if running then
+    M._on_ready(state.actual_port)
+  end
 end
 
 --- サーバーが待ち受けを始めたら（READY:<port>）ブラウザを開く

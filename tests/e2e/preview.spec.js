@@ -271,3 +271,17 @@ test("opens its own server and refuses a URL meant for another preview", async (
   expect(res?.status()).toBe(409);
   await expect(page.locator("h1")).toHaveText("Another preview is using this port");
 });
+
+test("opens the browser again when the preview is started again", async ({ page }) => {
+  pv = await startPreview();
+  await page.goto(pv.url);
+  await expect(page.locator("#content h1")).toBeVisible();
+  // ブラウザのタブを閉じたあと、サーバーは動いたまま :MdPreview をもう一度実行する
+  await page.goto("about:blank");
+  pv.send(":lua require('md_preview')._open_browser = function(u) vim.g.mdp_url = u end<CR>");
+  pv.send(":lua require('md_preview').config.auto_open = true<CR>");
+  pv.send(":MdPreview<CR>");
+  await expect.poll(() => pv.expr("get(g:, 'mdp_url', '')")).toMatch(/\/\?instance=[0-9a-f]+$/);
+  await page.goto(pv.expr("g:mdp_url"));
+  await expect(page.locator("#content h1")).toHaveText(/Handbook/);
+});
