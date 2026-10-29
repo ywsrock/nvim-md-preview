@@ -9,6 +9,7 @@ All notable changes are documented here. This project follows [Semantic Versioni
 - `task_toggle` option (on by default): clicking a task list checkbox in the preview toggles it in the Neovim buffer, as one undoable change. The preview sends back the buffer version it shows, and Neovim only changes the line when that version is current, so a click on an out-of-date preview never edits the wrong line. Disabled in LAN mode.
 - `cursor_highlight` option (on by default): the block under the Neovim cursor is outlined in the preview, and the line in code files. It also works with `scroll_sync = false`. Not shown when printing or in slides.
 - `browser_app` option (off by default): open the preview in an app window without tabs or an address bar, using `--app` of Chrome, Edge, Brave or Chromium. On WSL the Windows browser is used. Without one of them, the default browser is used as before.
+- Slides PDF: `:MdPreviewExport slides` (and "Slides (PDF)" in the Export menu) saves the presentation as a PDF with one slide per page, split the same way as presentation mode. `export.slide_size` chooses `"16:9"` (default) or `"4:3"`. Slides that do not fit on a page are scaled down. It is printed with Chrome, Edge, Brave or Chromium. `slides` is added to the default `export.formats`; if you set `formats` yourself, add `"slides"` to show it.
 - `log_file` option: appends start and stop, the port, the tools used, export results and errors from the binary to a file, for bug reports. Document contents are never written and the LAN token is masked.
 
 ### Fixed

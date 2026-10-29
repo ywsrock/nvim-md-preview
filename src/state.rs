@@ -90,6 +90,8 @@ pub struct ExportOptions {
     pub numbering: bool,
     /// ユーザーの Typst テンプレート（指定時は既定のスタイルの代わりに使う）
     pub template: Option<PathBuf>,
+    /// スライドの PDF の縦横比: "16:9" | "4:3"
+    pub slide_size: String,
 }
 
 impl Default for ExportOptions {
@@ -103,6 +105,7 @@ impl Default for ExportOptions {
             toc: false,
             numbering: false,
             template: None,
+            slide_size: "16:9".to_string(),
         }
     }
 }
@@ -127,7 +130,7 @@ impl AppState {
             task_toggle: Arc::new(RwLock::new(false)),
             cursor_highlight: Arc::new(RwLock::new(true)),
             export_formats: Arc::new(RwLock::new(
-                ["pdf", "docx", "html", "epub", "markdown"].iter().map(|s| s.to_string()).collect(),
+                ["pdf", "slides", "docx", "html", "epub", "markdown"].iter().map(|s| s.to_string()).collect(),
             )),
             access,
             latest_diff: Arc::new(RwLock::new(None)),

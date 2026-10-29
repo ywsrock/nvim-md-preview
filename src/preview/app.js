@@ -1380,10 +1380,63 @@ window.addEventListener('beforeprint', () => {
 });
 window.addEventListener('afterprint', () => { closedDetails.forEach(d => d.open = false); closedDetails = []; });
 
+// ── スライドの PDF（/print?slides=1）─────────────────────────
+// 発表モードと同じ分け方で、1 枚を 1 ページ（16:9 か 4:3、余白なし）にする。
+// 1 ページに収まらないスライドは縮小して収める（はみ出して切れるより、小さくても全部読める方を選ぶ）
+async function startSlidesPrint(p) {
+  const o = p.options || {};
+  const [w, h] = o.slide_size === '4:3' ? [10, 7.5] : [13.333, 7.5];
+  const style = document.createElement('style');
+  style.textContent = `@page { size: ${w}in ${h}in; margin: 0; }
+.print-slide { width: ${w}in; height: ${h}in; }`;
+  document.head.appendChild(style);
+  document.body.classList.add('print-slides');
+
+  const c = p.content;
+  if (!c) return;
+  document.title = c.title;
+  titleEl.textContent = c.title;
+  updateFrontMatter(null);
+  await renderContent(c.html);
+
+  buildSlides();
+  const pages = slides.map((nodes, i) => {
+    const page = document.createElement('section');
+    page.className = 'print-slide';
+    const body = document.createElement('div');
+    body.className = 'print-slide-body';
+    const fit = document.createElement('div');
+    fit.className = 'print-slide-fit';
+    for (const n of nodes) fit.appendChild(n);  // 描画済みの図や数式をそのまま移す
+    body.appendChild(fit);
+    const num = document.createElement('div');
+    num.className = 'print-slide-num';
+    num.textContent = `${i + 1} / ${slides.length}`;
+    page.append(body, num);
+    return page;
+  });
+  contentEl.replaceChildren(...pages);
+
+  // 収まらないスライドを縮める（縮めると横幅に余裕ができて折り返しが減るので、数回詰める）
+  for (const page of pages) {
+    const body = page.querySelector('.print-slide-body');
+    const fit = page.querySelector('.print-slide-fit');
+    let zoom = 1;
+    for (let k = 0; k < 4; k++) {
+      const need = fit.getBoundingClientRect().height;
+      const room = body.clientHeight;
+      if (need <= room + 1) break;
+      zoom = Math.max(0.3, zoom * room / need);
+      fit.style.zoom = String(zoom);
+    }
+  }
+}
+
 // ── PDF 用の印刷ページ（/print）──────────────────────────────
 // 用紙・余白・フォントは @page と CSS に、目次と見出し番号は印刷用の要素と CSS カウンターにする
 async function startPrint(p) {
   const o = p.options || {};
+  if (o.slides) return startSlidesPrint(p);
   const css = [
     `@page { size: ${o.paper || 'A4'}; margin: ${o.margin || '2cm'}; }`,
     `#content { font-size: ${o.font_size || 11}pt; }`,

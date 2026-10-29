@@ -214,6 +214,7 @@ async fn handle_config(state: &AppState, params: &[rmpv::Value]) {
         if let Some(v) = get_num(&ex, "font_size") { eo.font_size = v; }
         if let Some(v) = get_bool(&ex, "toc")      { eo.toc = v; }
         if let Some(v) = get_bool(&ex, "numbering") { eo.numbering = v; }
+        if let Some(v) = get_str(&ex, "slide_size") { eo.slide_size = v; }
         eo.template = get_str(&ex, "template").filter(|s| !s.is_empty()).map(PathBuf::from);
         drop(eo);
         *state.browser_path.write().await = get_str(&ex, "browser_path").filter(|s| !s.is_empty()).map(PathBuf::from);

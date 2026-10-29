@@ -148,7 +148,7 @@ Markdown・vimwiki・Quarto・R Markdown・MDX のファイルは文書として
   <img alt="プレゼンモード" src="docs/media/slides-light.png">
 </picture>
 
-**スライド。** `p` で文書をスライドとして発表します。`---` か見出しで区切り、カーソルに追従します。
+**スライド。** `p` で文書をスライドとして発表します。`---` か見出しで区切り、カーソルに追従します。`:MdPreviewExport slides` で、1 枚 1 ページの PDF に保存できます。
 
 </td>
 <td width="50%" valign="top">
@@ -284,7 +284,7 @@ require("md_preview").setup({
 | `:MarkdownPreview` / `:MdPreview` | プレビューを開始 |
 | `:MarkdownPreviewStop` / `:MdPreviewStop` | 停止 |
 | `:MarkdownPreviewToggle` | 開始 / 停止を切り替え |
-| `:MdPreviewExport {形式} [path]` | バッファを出力：`pdf` `docx` `html` `epub` `markdown`。`path` を省略するとファイルの隣に保存 |
+| `:MdPreviewExport {形式} [path]` | バッファを出力：`pdf` `slides`（1 枚 1 ページの PDF） `docx` `html` `epub` `markdown`。`path` を省略するとファイルの隣に保存 |
 | `:MdPreviewDiff [基準]` | Git の差分の表示を切り替え。`基準`（`HEAD`、`staged`、ブランチ・タグ・コミット）を指定するとそれと比較。`off` で非表示 |
 | `:MdPreviewInfo [copy]` | プレビューの URL、対象のファイル、PDF と PlantUML に使うものを表示。`copy` で URL をコピー |
 | `:MdPreviewInstall` | バイナリ・pandoc・Typst をダウンロード / 更新 |
@@ -351,7 +351,7 @@ require("md_preview").setup({
 
 | 設定 | 既定値 | 説明 |
 |---|---|---|
-| `formats` | `{ "pdf", "docx", "html", "epub", "markdown" }` | プレビューの Export メニューと `:MdPreviewExport` の補完に出す形式。`{}` にすると Export ボタンを隠します。 |
+| `formats` | `{ "pdf", "slides", "docx", "html", "epub", "markdown" }` | プレビューの Export メニューと `:MdPreviewExport` の補完に出す形式。`{}` にすると Export ボタンを隠します。 |
 | `pdf_engine` | `"browser"` | PDF の作り方。`"browser"` は Chrome・Edge・Brave・Chromium でプレビューを印刷するので、プレビューと同じ見た目になります。これらが無ければ Typst を使います。`"typst"` は常に Typst を使います（`template` に対応。図・数式・callout は描画されません）。 |
 | `browser_path` | `""` | PDF の作成に使うブラウザ。空なら、Chrome・Edge・Brave・Chromium を標準の場所と `PATH` から探します。 |
 | `docx_engine` | `"pandoc"` | `"pandoc"` なら `:MdPreviewInstall` で DOCX・HTML・EPUB 用の pandoc をダウンロードします。それ以外の値ではダウンロードしません。 |
@@ -363,6 +363,7 @@ require("md_preview").setup({
 | `font_size` | `11` | PDF の本文サイズ（pt）。 |
 | `toc` | `false` | 目次を入れます（PDF・DOCX・HTML・EPUB）。 |
 | `numbering` | `false` | 見出しに番号を付けます（PDF・DOCX・HTML・EPUB）。 |
+| `slide_size` | `"16:9"` | `:MdPreviewExport slides` の用紙の形: `"16:9"`（13.33 x 7.5 インチ）か `"4:3"`（10 x 7.5 インチ）。スライドは `pdf_engine` に関係なく Chrome、Edge、Brave、Chromium で印刷します。1 ページに収まらないスライドは縮小して収めます。 |
 | `template` | `""` | `template` 関数を export した Typst ファイル。`pdf_engine = "typst"` のとき PDF 全体に適用します（[レシピ](#レシピ)を参照）。 |
 
 ### Vimscript
@@ -406,7 +407,7 @@ require("md_preview").setup({
   plantuml_server = "",
 
   export = {
-    formats = { "pdf", "docx", "html", "epub", "markdown" },
+    formats = { "pdf", "slides", "docx", "html", "epub", "markdown" },
     pdf_engine = "browser",
     browser_path = "",
     docx_engine = "pandoc",
@@ -418,6 +419,7 @@ require("md_preview").setup({
     font_size = 11,
     toc = false,
     numbering = false,
+    slide_size = "16:9",
     template = "",
   },
 })

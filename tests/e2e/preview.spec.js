@@ -505,3 +505,41 @@ test("highlights without scrolling when scroll_sync is off", async ({ page }) =>
   await expect(page.locator("#content .cursor-block")).toHaveText(/The final paragraph/);
   expect(await page.evaluate(() => window.scrollY)).toBe(0);
 });
+
+test("exports slides as a PDF with one slide per page", async ({ page }) => {
+  const browser = process.env.MDP_TEST_BROWSER;
+  pv = await startPreview(browser ? { export: { browser_path: browser } } : {});
+  test.skip(pv.expr('luaeval("require(\'md_preview\')._find_browser() or \'\'")') === "",
+    "no Chrome, Edge, Brave or Chromium on this machine");
+  // スライドの枚数（発表モードと同じ分け方）
+  await page.goto(pv.url.replace(/\/$/, "") + "/print?slides=1");
+  const count = await page.locator(".print-slide").count();
+  expect(count).toBeGreaterThan(40);
+
+  // 既定の出力先 <name>.slides.pdf、16:9（13.333in x 7.5in = 960 x 540 pt）
+  const out = path.join(pv.dir, "doc.slides.pdf");
+  pv.send(":MdPreviewExport slides<CR>");
+  await expect.poll(() => (fs.existsSync(out) ? fs.statSync(out).size : 0), { timeout: 90_000 }).toBeGreaterThan(10_000);
+  await new Promise((r) => setTimeout(r, 300));
+  const pdf = fs.readFileSync(out).toString("latin1");
+  expect(pdf.startsWith("%PDF-")).toBe(true);
+  expect((pdf.match(/\/Type\s*\/Page[^s]/g) || []).length).toBe(count);
+  expect(pdf).toMatch(/\/MediaBox\s*\[\s*0 0 96\d(\.\d+)? 540\s*\]/);
+
+  // 4:3（10in x 7.5in = 720 x 540 pt）
+  const out43 = path.join(pv.dir, "four-three.pdf");
+  pv.send(`:lua require('md_preview').config.export.slide_size = '4:3'<CR>:MdPreviewStop<CR>:MdPreview<CR>`);
+  await page.waitForTimeout(800);
+  pv.send(`:MdPreviewExport slides ${out43}<CR>`);
+  await expect.poll(() => (fs.existsSync(out43) ? fs.statSync(out43).size : 0), { timeout: 90_000 }).toBeGreaterThan(10_000);
+  await new Promise((r) => setTimeout(r, 300));
+  expect(fs.readFileSync(out43).toString("latin1")).toMatch(/\/MediaBox\s*\[\s*0 0 720 540\s*\]/);
+});
+
+test("shows Slides in the Export menu by default", async ({ page }) => {
+  pv = await startPreview();
+  await page.goto(pv.url);
+  await expect(page.locator("#content h1")).toBeVisible();
+  await page.locator("#exportBtn").click();
+  await expect(page.locator('#exportMenu [data-format="slides"]')).toBeVisible();
+});
