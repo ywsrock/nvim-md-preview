@@ -203,7 +203,7 @@ Open the table of contents with `t` and search with `/` or Ctrl+F. The current s
 <details>
 <summary><b>Start the preview automatically</b></summary>
 
-Start it with the first Markdown file you open. With `follow_buffer` (on by default), the preview then switches to whichever Markdown buffer you are in.
+Start it with the first Markdown file you open. With `follow_buffer` (on by default), the preview then switches to whichever buffer you are in, if it can be previewed.
 
 ```lua
 vim.api.nvim_create_autocmd("FileType", {
@@ -324,7 +324,7 @@ require("md_preview").setup({
 |---|---|---|
 | `scroll_sync` | `true` | Scroll the preview to the block under the cursor. |
 | `cursor_highlight` | `true` | Outline the block under the cursor in the preview: the paragraph, heading, list item, table or code block, or the line in code files. Works with `scroll_sync = false` too. Style it with `.cursor-block` in `custom_css`. |
-| `follow_buffer` | `true` | Switch the preview when you enter another Markdown buffer. |
+| `follow_buffer` | `true` | Switch the preview when you enter another buffer that can be previewed (see `filetypes`). Special buffers such as help, file explorers and terminals are skipped. |
 | `debounce_ms` | `80` | Milliseconds to wait after typing before the preview updates. |
 | `theme` | `"auto"` | `"auto"` follows the OS, or `"dark"` / `"light"`. A theme chosen with the button in the preview is remembered and takes precedence. |
 | `custom_css` | `""` | Path to a CSS file loaded after the built-in styles, so it can override them. |
@@ -379,48 +379,54 @@ Without `setup()`, these variables are read when the plugin loads:
 <summary>All options with their defaults, ready to copy</summary>
 
 ```lua
+-- Markdown preview (nvim-md-preview)
 require("md_preview").setup({
-  filetypes = { "*" },
-  max_file_size = 2 * 1024 * 1024,
-  binary = vim.fn.stdpath("data") .. "/nvim-md-preview/nvim-md-preview",
-  port = 9876,
-  host = "127.0.0.1",
-  auto_open = true,
-  browser_app = false,
-  log_file = "",
+  -- General
+  filetypes = { "*" },              -- file types that can be previewed ("*" means all)
+  max_file_size = 2 * 1024 * 1024,  -- larger files are not previewed (bytes)
+  binary = vim.fn.stdpath("data") .. "/nvim-md-preview/nvim-md-preview",  -- path to the binary
+  port = 9876,                      -- server port (the next free one if taken)
+  host = "127.0.0.1",               -- address to listen on ("0.0.0.0" for the LAN)
+  auto_open = true,                 -- open the browser when the preview starts
+  browser_app = false,              -- open in an app window without tabs or an address bar
+  log_file = "",                    -- file to write a log to (empty: none)
 
-  scroll_sync = true,
-  cursor_highlight = true,
-  follow_buffer = true,
-  debounce_ms = 80,
-  theme = "auto",
-  custom_css = "",
-  wiki_links = true,
-  task_toggle = true,
-  browser_keys = true,
+  -- Preview
+  scroll_sync = true,               -- scroll the preview with the cursor
+  cursor_highlight = true,          -- outline the block under the cursor
+  follow_buffer = true,             -- switch when you enter another previewable buffer
+  debounce_ms = 80,                 -- wait after typing before updating (ms)
+  theme = "auto",                   -- "auto" (follow the OS) | "dark" | "light"
+  custom_css = "",                  -- extra CSS file
+  wiki_links = true,                -- render [[Page]] as links that open in Neovim
+  task_toggle = true,               -- click a checkbox to toggle it in the buffer
+  browser_keys = true,              -- keys in the preview (t, /, Ctrl+F, p)
 
-  git_diff = true,
-  git_diff_base = "HEAD",
-  git_diff_colors = true,
+  -- Git diff
+  git_diff = true,                  -- show changes in the preview
+  git_diff_base = "HEAD",           -- compare with "HEAD" | "staged" | a branch, tag or commit
+  git_diff_colors = true,           -- use the editor's diff colors
 
-  plantuml_path = "",
-  plantuml_server = "",
+  -- PlantUML
+  plantuml_path = "",               -- plantuml command or plantuml.jar (empty: from PATH)
+  plantuml_server = "",             -- PlantUML server URL (used only when set)
 
+  -- Export
   export = {
-    formats = { "pdf", "slides", "docx", "html", "epub", "markdown" },
-    pdf_engine = "browser",
-    browser_path = "",
-    docx_engine = "pandoc",
-    pandoc_path = "",
-    typst_path = "",
-    paper = "a4",
-    margin = "2cm",
-    font = "",
-    font_size = 11,
-    toc = false,
-    numbering = false,
-    slide_size = "16:9",
-    template = "",
+    formats = { "pdf", "slides", "docx", "html", "epub", "markdown" },  -- formats in the Export menu
+    pdf_engine = "browser",         -- how PDFs are made: "browser" | "typst"
+    browser_path = "",              -- browser for printing PDFs (empty: found automatically)
+    docx_engine = "pandoc",         -- converter for DOCX, HTML and EPUB
+    pandoc_path = "",               -- path to pandoc (empty: the downloaded one)
+    typst_path = "",                -- path to Typst (empty: the downloaded one)
+    paper = "a4",                   -- paper size
+    margin = "2cm",                 -- page margin
+    font = "",                      -- body font (empty: default)
+    font_size = 11,                 -- body font size (pt)
+    toc = false,                    -- add a table of contents
+    numbering = false,              -- number headings
+    slide_size = "16:9",            -- page shape of the slides PDF: "16:9" | "4:3"
+    template = "",                  -- Typst template (with pdf_engine = "typst")
   },
 })
 ```
