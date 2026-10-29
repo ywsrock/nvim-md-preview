@@ -129,7 +129,9 @@ Call `require("md_preview").setup(opts)`. All keys are optional; defaults:
         `.cursor-block` in |md-preview-custom_css|.
 
     follow_buffer                                *md-preview-follow_buffer*
-        `true`. Switch the preview when you enter another Markdown buffer.
+        `true`. Switch the preview when you enter another buffer that can be
+        previewed (see |md-preview-filetypes|). Special buffers such as help,
+        file explorers and terminals are skipped.
 
     debounce_ms                                    *md-preview-debounce_ms*
         `80`. Milliseconds to wait after typing before updating.

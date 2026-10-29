@@ -203,7 +203,7 @@ Markdown・vimwiki・Quarto・R Markdown・MDX のファイルは文書として
 <details>
 <summary><b>プレビューを自動で開始する</b></summary>
 
-最初に開いた Markdown ファイルで開始します。`follow_buffer`（既定で有効）により、その後は今いる Markdown バッファにプレビューが切り替わります。
+最初に開いた Markdown ファイルで開始します。`follow_buffer`（既定で有効）により、その後は今いるバッファ（プレビューできるもの）にプレビューが切り替わります。
 
 ```lua
 vim.api.nvim_create_autocmd("FileType", {
@@ -324,7 +324,7 @@ require("md_preview").setup({
 |---|---|---|
 | `scroll_sync` | `true` | カーソルのあるブロックにプレビューをスクロールします。 |
 | `cursor_highlight` | `true` | カーソルがあるブロック（段落、見出し、リスト項目、表、コードブロック。コードのファイルでは行）をプレビューで枠で示します。`scroll_sync = false` でも使えます。`custom_css` の `.cursor-block` で見た目を変えられます。 |
-| `follow_buffer` | `true` | 別の Markdown バッファに移ったら、プレビューを切り替えます。 |
+| `follow_buffer` | `true` | プレビューできる別のバッファ（`filetypes` に含まれるもの）に移ったら、プレビューを切り替えます。ヘルプ、ファイラー、ターミナルなどの特殊なバッファでは切り替えません。 |
 | `debounce_ms` | `80` | 入力が止まってからプレビューを更新するまでの待ち時間（ミリ秒）。 |
 | `theme` | `"auto"` | `"auto"`（OS の設定に従う）、`"dark"`、`"light"`。プレビューのボタンで切り替えた場合は、そちらを記憶して優先します。 |
 | `custom_css` | `""` | 組み込みスタイルの後に読み込む CSS ファイルのパス。組み込みのスタイルを上書きできます。 |
@@ -379,48 +379,54 @@ require("md_preview").setup({
 <summary>すべての設定と既定値（コピー用）</summary>
 
 ```lua
+-- Markdown プレビュー（nvim-md-preview）
 require("md_preview").setup({
-  filetypes = { "*" },
-  max_file_size = 2 * 1024 * 1024,
-  binary = vim.fn.stdpath("data") .. "/nvim-md-preview/nvim-md-preview",
-  port = 9876,
-  host = "127.0.0.1",
-  auto_open = true,
-  browser_app = false,
-  log_file = "",
+  -- 全般
+  filetypes = { "*" },              -- プレビューできるファイルの種類（"*" はすべて）
+  max_file_size = 2 * 1024 * 1024,  -- これより大きいファイルはプレビューしない（バイト）
+  binary = vim.fn.stdpath("data") .. "/nvim-md-preview/nvim-md-preview",  -- バイナリのパス
+  port = 9876,                      -- サーバーのポート（使用中なら次の空きポート）
+  host = "127.0.0.1",               -- 待ち受けるアドレス（"0.0.0.0" で LAN に公開）
+  auto_open = true,                 -- 開始時にブラウザを開く
+  browser_app = false,              -- タブやアドレスバーの無いアプリ風のウィンドウで開く
+  log_file = "",                    -- ログを書くファイル（空なら書かない）
 
-  scroll_sync = true,
-  cursor_highlight = true,
-  follow_buffer = true,
-  debounce_ms = 80,
-  theme = "auto",
-  custom_css = "",
-  wiki_links = true,
-  task_toggle = true,
-  browser_keys = true,
+  -- プレビュー
+  scroll_sync = true,               -- カーソルに合わせてプレビューをスクロールする
+  cursor_highlight = true,          -- カーソルのあるブロックを枠で示す
+  follow_buffer = true,             -- プレビューできる別のバッファに移ったら切り替える
+  debounce_ms = 80,                 -- 入力が止まってから更新するまでの待ち時間（ms）
+  theme = "auto",                   -- "auto"（OS に従う）| "dark" | "light"
+  custom_css = "",                  -- 追加の CSS ファイル
+  wiki_links = true,                -- [[Page]] を Neovim で開けるリンクにする
+  task_toggle = true,               -- チェックボックスのクリックでバッファを切り替える
+  browser_keys = true,              -- プレビュー画面のキー操作（t / / / Ctrl+F / p）
 
-  git_diff = true,
-  git_diff_base = "HEAD",
-  git_diff_colors = true,
+  -- Git の差分
+  git_diff = true,                  -- 差分をプレビューに表示する
+  git_diff_base = "HEAD",           -- 比較の基準（"HEAD" | "staged" | ブランチ・タグ・コミット）
+  git_diff_colors = true,           -- 差分の色をエディタに合わせる
 
-  plantuml_path = "",
-  plantuml_server = "",
+  -- PlantUML
+  plantuml_path = "",               -- plantuml コマンドか plantuml.jar（空なら PATH から探す）
+  plantuml_server = "",             -- PlantUML サーバーの URL（設定したときだけ使う）
 
+  -- 出力
   export = {
-    formats = { "pdf", "slides", "docx", "html", "epub", "markdown" },
-    pdf_engine = "browser",
-    browser_path = "",
-    docx_engine = "pandoc",
-    pandoc_path = "",
-    typst_path = "",
-    paper = "a4",
-    margin = "2cm",
-    font = "",
-    font_size = 11,
-    toc = false,
-    numbering = false,
-    slide_size = "16:9",
-    template = "",
+    formats = { "pdf", "slides", "docx", "html", "epub", "markdown" },  -- Export メニューに出す形式
+    pdf_engine = "browser",         -- PDF の作り方: "browser" | "typst"
+    browser_path = "",              -- PDF の印刷に使うブラウザ（空なら自動で探す）
+    docx_engine = "pandoc",         -- DOCX / HTML / EPUB の変換に使うもの
+    pandoc_path = "",               -- pandoc のパス（空ならダウンロードしたもの）
+    typst_path = "",                -- Typst のパス（空ならダウンロードしたもの）
+    paper = "a4",                   -- 用紙サイズ
+    margin = "2cm",                 -- 余白
+    font = "",                      -- 本文のフォント（空なら既定）
+    font_size = 11,                 -- 本文の文字の大きさ（pt）
+    toc = false,                    -- 目次を入れる
+    numbering = false,              -- 見出しに番号を付ける
+    slide_size = "16:9",            -- スライドの PDF の形: "16:9" | "4:3"
+    template = "",                  -- Typst のテンプレート（pdf_engine = "typst" のとき）
   },
 })
 ```
