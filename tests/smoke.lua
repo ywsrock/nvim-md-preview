@@ -57,6 +57,16 @@ check(hok and type(health.check) == "function", "md_preview.health.check が関�
 check(type(md._is_running) == "function", "_is_running が関数ではない")
 check(md._is_running() == false, "_is_running() が初期状態で false ではない")
 
+--- ジョブの出力が途中で分かれて届いても、行として組み立てる（"READY:" と番号が別々に届く場合）
+do
+  local lines, rest = md._join_lines("", { "READY:" })
+  check(#lines == 0 and rest == "READY:", "行の途中が残っていない")
+  lines, rest = md._join_lines(rest, { "9950", "" })
+  check(#lines == 1 and lines[1] == "READY:9950" and rest == "", "分かれた行がつながらない: " .. vim.inspect(lines))
+  lines, rest = md._join_lines("", { "a", "b", "c" })
+  check(#lines == 2 and lines[2] == "b" and rest == "c", "複数行の組み立てが違う: " .. vim.inspect(lines))
+end
+
 --- 結果
 if #failures > 0 then
   for _, msg in ipairs(failures) do

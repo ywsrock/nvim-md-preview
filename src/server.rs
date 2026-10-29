@@ -48,7 +48,12 @@ pub async fn start_server(host: &str, port: u16, state: Arc<AppState>) {
         .layer(axum::middleware::from_fn_with_state(Arc::clone(&state), access_guard))
         .with_state(state);
 
-    eprintln!("READY:{}", bound_port);
+    // 1 回の書き込みで行全体を出す（eprintln! は書式の部分ごとに書き込むことがあり、
+    //   Neovim 側で "READY:" と番号が別々に届くことがある）
+    {
+        use std::io::Write;
+        let _ = std::io::stderr().write_all(format!("READY:{}\n", bound_port).as_bytes());
+    }
     axum::serve(listener, app).await.unwrap();
 }
 
