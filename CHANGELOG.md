@@ -2,7 +2,7 @@
 
 All notable changes are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.8.1] - 2026-10-29
 
 ### Fixed
 - Running `:MdPreview` again after closing the browser tab did not open the browser (since 0.8.0). When the server is already running, the preview URL is now opened again right away.
