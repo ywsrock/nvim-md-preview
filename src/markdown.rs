@@ -76,10 +76,10 @@ pub fn extract_front_matter(content: &str) -> (Option<String>, String) {
         return (Some(fm), body);
     }
 
-    // ファイル末尾が `\n---` で終わる場合
+    // ファイル末尾が `\n---` で終わる場合（"---\n---" だけのときは front matter が空）
     if content.ends_with("\n---") {
         let body_end = content.len() - 4;
-        let fm = content[4..body_end].to_string();
+        let fm = content.get(4..body_end).unwrap_or("").to_string();
         return (Some(fm), String::new());
     }
 
@@ -197,6 +197,16 @@ pub fn to_html(markdown: &str, line_offset: usize, opts: RenderOptions) -> Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn front_matter_being_typed_does_not_panic() {
+        // 入力途中の front matter（末尾に改行なし）
+        assert_eq!(extract_front_matter("---\n---"), (Some(String::new()), String::new()));
+        assert_eq!(extract_front_matter("---\n---\n"), (Some(String::new()), String::new()));
+        assert_eq!(extract_front_matter("---\na: 1\n---"), (Some("a: 1".to_string()), String::new()));
+        assert_eq!(extract_front_matter("---"), (None, "---".to_string()));
+        assert_eq!(extract_front_matter("---\n"), (None, "---\n".to_string()));
+    }
 
     #[test]
     fn front_matter_is_split_from_body() {

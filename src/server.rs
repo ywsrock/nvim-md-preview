@@ -87,21 +87,17 @@ async fn ws_handler(
 }
 
 async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
-    {
-        let latest = state.latest_html.read().await;
-        if let Some(payload) = latest.as_ref() {
-            if socket.send(Message::Text(payload.clone())).await.is_err() {
-                return;
-            }
-        }
-        let diff = state.latest_diff.read().await;
-        if let Some(payload) = diff.as_ref() {
-            if socket.send(Message::Text(payload.clone())).await.is_err() {
-                return;
-            }
+    // 先に購読してから最新の内容を送る（逆だと、その間に届いた更新を取りこぼす。
+    //   重なって 2 回届いても、ブラウザは同じ内容を描き直すだけ）
+    let mut rx = state.tx.subscribe();
+    // ロックは中身をコピーしたらすぐ外す（送信の遅いブラウザが更新を止めないように）
+    let latest = state.latest_html.read().await.clone();
+    let diff = state.latest_diff.read().await.clone();
+    for payload in [latest, diff].into_iter().flatten() {
+        if socket.send(Message::Text(payload)).await.is_err() {
+            return;
         }
     }
-    let mut rx = state.tx.subscribe();
     loop {
         tokio::select! {
             // Neovim → ブラウザ（内容更新・スクロール）

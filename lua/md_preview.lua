@@ -520,7 +520,10 @@ local function start_binary()
   state.job_id = vim.fn.jobstart(cmd, {
     rpc = true,
     env = { MD_PREVIEW_INSTANCE = state.instance },
-    on_exit = function(_, exit_code, _)
+    on_exit = function(job_id, exit_code, _)
+      -- :MdPreviewStop で止めたジョブや、再起動前の古いジョブの終了は無視する
+      --   （ここで状態を消すと、新しく起動したプレビューが動かなくなる）
+      if job_id ~= state.job_id then return end
       vim.notify(
         string.format("[md-preview] The binary exited (exit: %d)", exit_code),
         vim.log.levels.WARN
@@ -809,10 +812,17 @@ function M.export(format, path)
       vim.notify(string.format("[md-preview] Specify where to save: :MdPreviewExport %s <path>", format), vim.log.levels.ERROR)
       return
     end
-    local ext = format == "markdown" and "md" or format
+    -- Markdown は元のファイルと同じ名前にならないよう <name>.export.md にする
+    local ext = format == "markdown" and "export.md" or format
     path = vim.fn.fnamemodify(name, ":r") .. "." .. ext
   end
   path = vim.fn.fnamemodify(vim.fn.expand(path), ":p")
+  -- 編集中のファイルを Neovim の外から上書きしない
+  local source = vim.api.nvim_buf_get_name(state.buf_id)
+  if source ~= "" and vim.fn.resolve(path) == vim.fn.resolve(vim.fn.fnamemodify(source, ":p")) then
+    vim.notify("[md-preview] Export would overwrite the file you are editing. Choose another path, or use :w", vim.log.levels.ERROR)
+    return
+  end
   -- 最新のバッファ内容を送ってから変換する（未保存の変更も含める）
   send_update(state.buf_id)
   vim.notify(string.format("[md-preview] Converting to %s...", format:upper()), vim.log.levels.INFO)

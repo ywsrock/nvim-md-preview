@@ -285,3 +285,64 @@ test("opens the browser again when the preview is started again", async ({ page 
   await page.goto(pv.expr("g:mdp_url"));
   await expect(page.locator("#content h1")).toHaveText(/Handbook/);
 });
+
+test("keeps running while front matter is being typed", async ({ page }) => {
+  pv = await startPreview();
+  await page.goto(pv.url);
+  await expect(page.locator("#content h1")).toBeVisible();
+  // 文書の先頭に "---" を 2 行だけ打った状態（以前はここでサーバーが落ちていた）
+  pv.send(":%d<CR>i---<CR>---<Esc>");
+  await page.waitForTimeout(500);
+  pv.send("o<CR># After front matter<Esc>");
+  // 消した見出しは差分表示（削除）として残るので、本文の見出しだけを見る
+  await expect(page.locator("#content > h1")).toHaveText("After front matter");
+});
+
+test("shows images whose names have non-ASCII characters or spaces", async ({ page }) => {
+  pv = await startPreview();
+  // 1x1 の PNG
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
+  fs.writeFileSync(path.join(pv.dir, "画像.png"), png);
+  fs.writeFileSync(path.join(pv.dir, "my image.png"), png);
+  await page.goto(pv.url);
+  await expect(page.locator("#content h1")).toBeVisible();
+  // --remote-send では "<" をキー表記と区別するため <lt> と書く
+  pv.send(":call append(0, ['![a](画像.png)', '', '![b](<lt>my image.png>)', ''])<CR>");
+  for (const alt of ["a", "b"]) {
+    const img = page.locator(`#content img[alt="${alt}"]`);
+    await expect(img).toBeVisible();
+    await expect.poll(() => img.evaluate((el) => el.naturalWidth)).toBe(1);
+  }
+});
+
+test("does not export Markdown onto the file being edited", async () => {
+  pv = await startPreview();
+  const doc = path.join(pv.dir, "doc.md");
+  const before = fs.readFileSync(doc, "utf8");
+  pv.send("ggA Unsaved<Esc>");
+  pv.send(":MdPreviewExport markdown<CR>");
+  const out = path.join(pv.dir, "doc.export.md");
+  await expect.poll(() => fs.existsSync(out)).toBe(true);
+  expect(fs.readFileSync(out, "utf8")).toContain("# Handbook Unsaved");
+  // 明示的に元のファイルを指定しても書き込まない
+  pv.send(`:MdPreviewExport markdown ${doc}<CR>`);
+  await new Promise((r) => setTimeout(r, 800));
+  expect(fs.readFileSync(doc, "utf8")).toBe(before);
+});
+
+test("keeps working when stopped and started again quickly", async ({ page }) => {
+  pv = await startPreview();
+  await page.goto(pv.url);
+  await expect(page.locator("#content h1")).toBeVisible();
+  pv.send(":lua require('md_preview')._open_browser = function(u) vim.g.mdp_url = u end<CR>");
+  pv.send(":lua require('md_preview').config.auto_open = true<CR>");
+  pv.send(":MdPreviewStop<CR>:MdPreview<CR>");
+  await expect.poll(() => pv.expr("get(g:, 'mdp_url', '')"), { timeout: 10_000 }).toMatch(/instance=/);
+  await page.goto(pv.expr("g:mdp_url"));
+  await expect(page.locator("#content h1")).toBeVisible();
+  // 古いジョブの終了で新しいプレビューの状態が消えていなければ、編集が届く
+  await page.waitForTimeout(500);
+  pv.send("3GA Still connected.<Esc>");
+  await expect(page.locator("#content")).toContainText("Still connected.");
+  expect(pv.expr("execute('messages')")).not.toContain("The binary exited");
+});

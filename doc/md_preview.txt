@@ -62,8 +62,9 @@ tools and how the browser is opened.
 :MdPreviewExport {format} [{path}]                        *:MdPreviewExport*
     Export the buffer being previewed, including unsaved changes. {format}
     is one of `pdf`, `docx`, `html`, `epub`, `markdown`. Without {path} the
-    file is written next to the source with the new extension. The preview
-    must be running.
+    file is written next to the source with the new extension (`markdown`
+    uses `{name}.export.md`). Exporting onto the file being edited is
+    refused. The preview must be running.
 
 :MdPreviewDiff [{base}]                                     *:MdPreviewDiff*
     Without an argument, toggle |md-preview-git_diff|. With {base} (`HEAD`,

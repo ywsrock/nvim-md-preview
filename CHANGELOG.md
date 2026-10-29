@@ -2,6 +2,17 @@
 
 All notable changes are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- The preview server crashed when the buffer was only two `---` lines, which happens while typing front matter.
+- Images whose file names contain non-ASCII characters or spaces (for example `画像.png` or `<my image.png>`) were shown as broken.
+- `:MdPreviewExport markdown` without a path overwrote the source file outside Neovim. It now writes `<name>.export.md`, and exporting onto the file being edited is refused.
+- Stopping and starting the preview quickly (`:MdPreviewStop` then `:MdPreview`, or toggling twice) could leave the new preview without updates. Stopping no longer shows a "The binary exited" warning.
+- The preview stopped updating while a Typst or pandoc export was running.
+- Updates that arrived while the page was still drawing (for example, Mermaid diagrams while typing) were drawn at the same time. They are now drawn one after another, using only the latest one.
+- A browser that connected while you were typing could miss the newest content until the next edit.
+
 ## [0.8.1] - 2026-10-29
 
 ### Fixed
