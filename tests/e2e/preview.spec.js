@@ -399,6 +399,8 @@ test("toggles task list items from the preview", async ({ page }) => {
   // チェックボックスのクリックで Neovim のカーソルは動かない（行への移動は文字のクリックだけ）
   pv.send("G");
   const cursor = pv.expr('line(".")');
+  // カーソル移動によるスクロールが終わってからクリックする（途中でスクロールすると別の場所に当たる）
+  await expect(page.locator("#content .cursor-block")).toHaveText(/The final paragraph/);
   await box("quoted").click();
   await expect.poll(() => line(pv, 4)).toBe("> - [x] quoted");
   expect(pv.expr('line(".")')).toBe(cursor);
@@ -457,4 +459,49 @@ test("task_toggle = false keeps checkboxes read-only", async ({ page }) => {
   await expect(page.locator("#content h1")).toBeVisible();
   addTasks(pv);
   await expect(page.locator("#content li > input").first()).toBeDisabled();
+});
+
+test("highlights the block under the Neovim cursor", async ({ page }) => {
+  pv = await startPreview();
+  await page.goto(pv.url);
+  await expect(page.locator("#content h1")).toBeVisible();
+  const block = page.locator("#content .cursor-block");
+  pv.send("8G"); // ## Diagram
+  await expect(block).toHaveCount(1);
+  await expect(block).toHaveText(/Diagram/);
+  expect(await block.evaluate((el) => el.tagName)).toBe("H2");
+  pv.send("3G"); // Intro paragraph
+  await expect(block).toHaveText(/Intro paragraph/);
+  // リスト項目は項目ごと（入れ子は内側）
+  pv.send(":call append(4, ['- outer', '  - inner', ''])<CR>");
+  pv.send("6G");
+  await expect(block).toHaveText("inner");
+  expect(await block.evaluate((el) => el.tagName)).toBe("LI");
+});
+
+test("highlights the cursor line in code files", async ({ page }) => {
+  pv = await startPreview({}, "app.lua");
+  await page.goto(pv.url);
+  await expect(page.locator("#content .code-view")).toBeVisible();
+  pv.send("6G");
+  await expect(page.locator(".cv-line.cursor-block")).toHaveCount(1);
+  await expect(page.locator(".cv-line.cursor-block .cv-ln")).toHaveText("6");
+});
+
+test("cursor_highlight = false shows no highlight", async ({ page }) => {
+  pv = await startPreview({ cursor_highlight: false });
+  await page.goto(pv.url);
+  await expect(page.locator("#content h1")).toBeVisible();
+  pv.send("8G");
+  await page.waitForTimeout(600);
+  await expect(page.locator(".cursor-block")).toHaveCount(0);
+});
+
+test("highlights without scrolling when scroll_sync is off", async ({ page }) => {
+  pv = await startPreview({ scroll_sync: false });
+  await page.goto(pv.url);
+  await expect(page.locator("#content h1")).toBeVisible();
+  pv.send("G");
+  await expect(page.locator("#content .cursor-block")).toHaveText(/The final paragraph/);
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
 });

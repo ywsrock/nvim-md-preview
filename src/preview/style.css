@@ -132,6 +132,11 @@ header h1{margin:0;font-size:.9rem;font-weight:600;letter-spacing:.2px;flex:1;
 :is(#content,#slideBody) .code-wrap .copy-btn:hover{color:var(--fg);background:rgba(127,127,127,.15)}
 :is(#content,#slideBody) .code-wrap .copy-btn.copied{color:#3fb950}
 :is(#content,#slideBody) .code-wrap .code-lang ~ .copy-btn{top:26px}
+/* カーソル行の強調: 差分の印（左側の ::before / ::after）と重ならないよう、枠（outline）で示す */
+#content .cursor-block{outline:1.5px solid color-mix(in srgb,var(--accent) 45%,transparent);outline-offset:4px;
+  border-radius:4px;transition:outline-color .15s ease}
+#content .cv-line.cursor-block{outline-offset:-1px;border-radius:0}
+:is(#slideBody,body.print-preview #content) .cursor-block{outline:none}
 /* plantuml: 図は白地で描かれるので、ダークテーマでも白い台紙に載せる */
 .plantuml-block{margin:1em 0;border:1px solid var(--stroke);border-radius:8px;overflow:auto}
 .plantuml-block .plantuml-wrap{padding:1rem;display:flex;justify-content:center}
@@ -313,6 +318,7 @@ body.print-preview #content{width:210mm;max-width:100%;min-height:297mm;padding:
 body.print-preview #toc{display:none}
 @media print{
   header,#toc,#searchBar,#slides,#overlay,#fm-panel,.copy-btn,.mermaid-expand-btn,.anchor-link,#fn-pop{display:none!important}
+  .cursor-block{outline:none!important}
   html,body{background:#fff!important;height:auto}
   #content{max-width:none!important;width:auto!important;margin:0!important;padding:0!important;
     box-shadow:none!important;background:none!important;animation:none}

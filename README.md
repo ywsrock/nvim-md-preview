@@ -322,6 +322,7 @@ require("md_preview").setup({
 | Option | Default | Description |
 |---|---|---|
 | `scroll_sync` | `true` | Scroll the preview to the block under the cursor. |
+| `cursor_highlight` | `true` | Outline the block under the cursor in the preview: the paragraph, heading, list item, table or code block, or the line in code files. Works with `scroll_sync = false` too. Style it with `.cursor-block` in `custom_css`. |
 | `follow_buffer` | `true` | Switch the preview when you enter another Markdown buffer. |
 | `debounce_ms` | `80` | Milliseconds to wait after typing before the preview updates. |
 | `theme` | `"auto"` | `"auto"` follows the OS, or `"dark"` / `"light"`. A theme chosen with the button in the preview is remembered and takes precedence. |
@@ -386,6 +387,7 @@ require("md_preview").setup({
   log_file = "",
 
   scroll_sync = true,
+  cursor_highlight = true,
   follow_buffer = true,
   debounce_ms = 80,
   theme = "auto",

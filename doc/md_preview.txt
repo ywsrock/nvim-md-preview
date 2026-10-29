@@ -114,6 +114,12 @@ Call `require("md_preview").setup(opts)`. All keys are optional; defaults:
     scroll_sync                                    *md-preview-scroll_sync*
         `true`. Scroll the preview with the cursor.
 
+    cursor_highlight                          *md-preview-cursor_highlight*
+        `true`. Outline the block under the cursor in the preview: the
+        paragraph, heading, list item, table or code block, or the line in
+        code files. Works with `scroll_sync = false` too. Style it with
+        `.cursor-block` in |md-preview-custom_css|.
+
     follow_buffer                                *md-preview-follow_buffer*
         `true`. Switch the preview when you enter another Markdown buffer.
 

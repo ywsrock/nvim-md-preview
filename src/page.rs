@@ -79,10 +79,17 @@ pub(crate) async fn settings_handler(State(state): State<Arc<AppState>>) -> Resp
     let theme = state.theme.read().await.clone();
     let browser_keys = *state.browser_keys.read().await;
     let task_toggle = *state.task_toggle.read().await && !state.access.lan;
+    let cursor_highlight = *state.cursor_highlight.read().await;
     let export_formats = state.export_formats.read().await.clone();
     (
         [(header::CONTENT_TYPE, "application/json")],
-        serde_json::json!({ "theme": theme, "browser_keys": browser_keys, "task_toggle": task_toggle, "export_formats": export_formats }).to_string(),
+        serde_json::json!({
+            "theme": theme,
+            "browser_keys": browser_keys,
+            "cursor_highlight": cursor_highlight,
+            "task_toggle": task_toggle,
+            "export_formats": export_formats,
+        }).to_string(),
     ).into_response()
 }
 
