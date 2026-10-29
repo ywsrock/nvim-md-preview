@@ -118,6 +118,13 @@ async fn handle_update(state: &AppState, params: &[rmpv::Value]) {
     // 表示の仕方（"markdown" | "code"）と filetype。古い Lua から来た場合は Markdown として扱う
     let kind = params.get(4).and_then(|v| v.as_str()).unwrap_or("markdown");
     let filetype = params.get(5).and_then(|v| v.as_str()).unwrap_or("");
+    // 内容の版（バッファ番号と changedtick）。チェックボックスの切り替えで、
+    //   ブラウザが表示している版が最新かを Neovim 側で確かめるのに使う
+    let as_int = |v: &rmpv::Value| v.as_i64().or_else(|| v.as_u64().map(|n| n as i64));
+    let rev = match (params.get(6).and_then(as_int), params.get(7).and_then(as_int)) {
+        (Some(buf), Some(tick)) => serde_json::json!({ "buf": buf, "tick": tick }),
+        _ => serde_json::Value::Null,
+    };
 
     if !base_dir_str.is_empty() {
         *state.base_dir.write().await = Some(PathBuf::from(base_dir_str));
@@ -139,6 +146,7 @@ async fn handle_update(state: &AppState, params: &[rmpv::Value]) {
             "title": title,
             "text": content,
             "lang": filetype,
+            "rev": rev,
         }).to_string();
         state.update_html(payload).await;
         return;
@@ -155,6 +163,7 @@ async fn handle_update(state: &AppState, params: &[rmpv::Value]) {
         "title": title,
         "html": html,
         "front_matter": front_matter,
+        "rev": rev,
     }).to_string();
 
     state.update_html(payload).await;
@@ -185,6 +194,7 @@ async fn handle_config(state: &AppState, params: &[rmpv::Value]) {
 
     state.render_opts.write().await.wiki_links = get_bool(opts, "wiki_links").unwrap_or(false);
     *state.browser_keys.write().await = get_bool(opts, "browser_keys").unwrap_or(true);
+    *state.task_toggle.write().await = get_bool(opts, "task_toggle").unwrap_or(false);
     if let Some(formats) = get(opts, "export_formats").and_then(|v| v.as_array().cloned()) {
         *state.export_formats.write().await =
             formats.iter().filter_map(|f| f.as_str().map(str::to_string)).collect();

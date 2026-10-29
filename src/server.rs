@@ -134,6 +134,25 @@ fn handle_browser_message(state: &AppState, text: &str) {
                 ],
             );
         }
+        // {"type":"toggle_task","line":N,"checked":bool,"buf":B,"tick":T} → チェックボックスを切り替える
+        //   LAN モードでは受け付けない（他の端末からバッファを書き換えさせない）
+        Some("toggle_task") if !state.access.lan => {
+            let int = |k: &str| data.get(k).and_then(|v| v.as_i64());
+            let (Some(line), Some(buf), Some(tick)) = (int("line"), int("buf"), int("tick")) else { return; };
+            let checked = data.get("checked").and_then(|v| v.as_bool()).unwrap_or(false);
+            state.notify_nvim(
+                "nvim_exec_lua",
+                vec![
+                    rmpv::Value::from("require('md_preview')._toggle_task(...)"),
+                    rmpv::Value::Array(vec![
+                        rmpv::Value::from(line),
+                        rmpv::Value::from(checked),
+                        rmpv::Value::from(buf),
+                        rmpv::Value::from(tick),
+                    ]),
+                ],
+            );
+        }
         Some("open") => {
             let Some(path) = data.get("path").and_then(|v| v.as_str()) else { return; };
             state.notify_nvim(

@@ -374,3 +374,87 @@ test("shows the preview URL with :MdPreviewInfo and writes the log file", async 
     fs.rmSync(logDir, { recursive: true, force: true });
   }
 });
+
+// 文書の先頭にタスクリストを足す（1〜6 行目）
+const addTasks = (pv) => pv.send(":call append(0, ['- [ ] alpha', '  - [x] nested', '1. [ ] ordered', '> - [ ] quoted', '', ''])<CR>");
+// pv.expr は前後の空白を削るので、string() で引用符付きにしてから外す（行頭の字下げを残すため）
+const line = (pv, n) => pv.expr(`string(getline(${n}))`).slice(1, -1);
+
+test("toggles task list items from the preview", async ({ page }) => {
+  pv = await startPreview();
+  await page.goto(pv.url);
+  await expect(page.locator("#content h1")).toBeVisible();
+  addTasks(pv);
+  const box = (text) => page.locator("#content li", { hasText: text }).last().locator("> input");
+  await expect(box("alpha")).toBeEnabled();
+
+  await box("alpha").click();
+  await expect.poll(() => line(pv, 1)).toBe("- [x] alpha");
+  await expect(box("alpha")).toBeChecked();
+
+  await box("nested").click();
+  await expect.poll(() => line(pv, 2)).toBe("  - [ ] nested");
+  await box("ordered").click();
+  await expect.poll(() => line(pv, 3)).toBe("1. [x] ordered");
+  // チェックボックスのクリックで Neovim のカーソルは動かない（行への移動は文字のクリックだけ）
+  pv.send("G");
+  const cursor = pv.expr('line(".")');
+  await box("quoted").click();
+  await expect.poll(() => line(pv, 4)).toBe("> - [x] quoted");
+  expect(pv.expr('line(".")')).toBe(cursor);
+  // 1 回の undo で戻せる
+  pv.send("u");
+  await expect.poll(() => line(pv, 4)).toBe("> - [ ] quoted");
+});
+
+test("toggles a task right after saving", async ({ page }) => {
+  pv = await startPreview();
+  await page.goto(pv.url);
+  await expect(page.locator("#content h1")).toBeVisible();
+  addTasks(pv);
+  const box = page.locator("#content li", { hasText: "alpha" }).first().locator("> input");
+  await expect(box).toBeEnabled();
+  // :w で changedtick は増えるが、内容は表示と同じなので切り替えられる
+  pv.send(":w<CR>");
+  await page.waitForTimeout(300);
+  await box.click();
+  await expect.poll(() => line(pv, 1)).toBe("- [x] alpha");
+});
+
+test("does not toggle from an out-of-date preview or in LAN mode", async ({ page }) => {
+  pv = await startPreview();
+  await page.goto(pv.url);
+  await expect(page.locator("#content h1")).toBeVisible();
+  addTasks(pv);
+  await expect(page.locator("#content li > input").first()).toBeEnabled();
+  const call = (tick) => pv.send(`:lua require('md_preview')._toggle_task(1, true, vim.api.nvim_get_current_buf(), ${tick})<CR>`);
+  // 古い版
+  call("vim.api.nvim_buf_get_changedtick(0) - 1");
+  await page.waitForTimeout(300);
+  expect(line(pv, 1)).toBe("- [ ] alpha");
+  expect(pv.expr("execute('messages')")).toContain("The preview is out of date");
+  // 送る前の変更がある（表示より新しい内容）
+  pv.send(":lua vim.api.nvim_buf_set_lines(0, 0, 1, false, {'- [ ] alpha changed'}); require('md_preview')._toggle_task(1, true, vim.api.nvim_get_current_buf(), require('md_preview')._sent_tick())<CR>");
+  await page.waitForTimeout(300);
+  expect(line(pv, 1)).toBe("- [ ] alpha changed");
+  // タスクでない行（5 行目は空行）は書き換えない
+  pv.send("u");
+  await page.waitForTimeout(300);
+  pv.send(":lua require('md_preview')._toggle_task(5, true, vim.api.nvim_get_current_buf(), require('md_preview')._sent_tick())<CR>");
+  await page.waitForTimeout(300);
+  expect(line(pv, 5)).toBe("");
+  expect(pv.expr("execute('messages')")).toContain("No task on line 5");
+  // LAN モードでは何もしない
+  pv.send(":lua require('md_preview').config.host = '0.0.0.0'<CR>");
+  call("require('md_preview')._sent_tick()");
+  await page.waitForTimeout(300);
+  expect(line(pv, 1)).toBe("- [ ] alpha");
+});
+
+test("task_toggle = false keeps checkboxes read-only", async ({ page }) => {
+  pv = await startPreview({ task_toggle: false });
+  await page.goto(pv.url);
+  await expect(page.locator("#content h1")).toBeVisible();
+  addTasks(pv);
+  await expect(page.locator("#content li > input").first()).toBeDisabled();
+});
