@@ -2,7 +2,7 @@
 
 All notable changes are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.8.2] - 2026-10-29
 
 ### Fixed
 - The preview server crashed when the buffer was only two `---` lines, which happens while typing front matter.
