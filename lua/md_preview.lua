@@ -26,6 +26,9 @@ M.config = {
   --   その場合は毎回ランダムなトークンを発行し、トークン付き URL でしか開けない
   host = "127.0.0.1",
   auto_open = true,
+  -- アドレスバーやタブの無いアプリ風のウィンドウで開く（Chrome / Edge / Brave / Chromium の --app）。
+  --   ブラウザは export.browser_path、無ければ自動で探す。見つからなければ通常どおり開く
+  browser_app = false,
   -- カーソル移動に合わせてプレビューをスクロールする
   scroll_sync = true,
   -- 別の Markdown バッファに移動したらプレビュー対象を切り替える
@@ -954,7 +957,41 @@ end
 --- OS・環境に応じてブラウザを開く
 --- WSL の場合は Windows 側のブラウザを優先する
 function M._open_browser(url)
+  vim.fn.jobstart(M._browser_cmd(url), { detach = true })
+end
+
+--- アプリ風ウィンドウ（--app）に使う Chromium 系ブラウザ（見つからなければ nil）
+--- WSL では Windows 側のブラウザを探す（PDF の印刷用の M._find_browser は Linux 側だけを探す）
+function M._find_app_browser()
+  local configured = M.config.export.browser_path
+  if configured ~= nil and configured ~= "" then return M._find_browser() end
+  if detect_wsl() then
+    for _, p in ipairs({
+      "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe",
+      "/mnt/c/Program Files (x86)/Google/Chrome/Application/chrome.exe",
+      "/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
+      "/mnt/c/Program Files/Microsoft/Edge/Application/msedge.exe",
+      "/mnt/c/Program Files/BraveSoftware/Brave-Browser/Application/brave.exe",
+    }) do
+      if vim.fn.executable(p) == 1 then return p end
+    end
+  end
+  return M._find_browser()
+end
+
+--- ブラウザで url を開くコマンド
+function M._browser_cmd(url)
   local cmd
+
+  if M.config.browser_app then
+    local browser = M._find_app_browser()
+    if browser then return { browser, "--app=" .. url } end
+    if not state.app_warned then
+      state.app_warned = true
+      vim.notify("[md-preview] browser_app: no Chrome, Edge, Brave or Chromium found, so the default browser is used",
+        vim.log.levels.WARN)
+    end
+  end
 
   if vim.fn.has("mac") == 1 then
     -- macOS
@@ -988,7 +1025,7 @@ function M._open_browser(url)
     cmd = { "cmd.exe", "/c", "start", '""', M._cmd_escape(url) }
   end
 
-  vim.fn.jobstart(cmd, { detach = true })
+  return cmd
 end
 
 local uv = vim.uv or vim.loop

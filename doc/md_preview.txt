@@ -111,6 +111,12 @@ Call `require("md_preview").setup(opts)`. All keys are optional; defaults:
     auto_open                                        *md-preview-auto_open*
         `true`. Open the browser when the preview starts.
 
+    browser_app                                    *md-preview-browser_app*
+        `false`. Open the preview in an app window without tabs or an
+        address bar (`--app` of Chrome, Edge, Brave or Chromium). Uses
+        `export.browser_path`, or finds one of those browsers (on WSL, the
+        Windows one). Without one, the default browser is used.
+
     scroll_sync                                    *md-preview-scroll_sync*
         `true`. Scroll the preview with the cursor.
 

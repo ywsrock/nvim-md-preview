@@ -225,6 +225,16 @@ local function check_browser_opener(config)
     end
   end
   h.info("auto_open = " .. tostring(config.auto_open))
+  if config.browser_app then
+    local browser = require("md_preview")._find_app_browser()
+    if browser then
+      h.ok("browser_app: opened as an app window with " .. browser)
+    else
+      h.warn("browser_app: no Chrome, Edge, Brave or Chromium found, so the default browser is used", {
+        "Install one of them, or set export.browser_path",
+      })
+    end
+  end
 end
 
 --- ポート設定

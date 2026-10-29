@@ -314,6 +314,7 @@ require("md_preview").setup({
 | `port` | `9876` | Port of the preview server. If it is taken, the next free port is used. |
 | `host` | `"127.0.0.1"` | Address to listen on. `"0.0.0.0"` lets other devices on your LAN open the preview; a token is then required (see "Follow along on a tablet" in [Recipes](#recipes)). |
 | `auto_open` | `true` | Open the browser when the preview starts. |
+| `browser_app` | `false` | Open the preview in an app window without tabs or an address bar (`--app` of Chrome, Edge, Brave or Chromium), handy next to the editor. Uses `export.browser_path`, or finds one of those browsers (on WSL, the Windows one). Without one, the default browser is used. |
 | `binary` | Downloaded copy in `stdpath("data")/nvim-md-preview/` | Path to the preview binary. Set it when you build from source. |
 | `log_file` | `""` | File to append a log to: start and stop, the port, the tools used, export results and errors from the binary. Document contents are never written, and the LAN token is masked. Empty writes nothing. Useful for bug reports. |
 
@@ -384,6 +385,7 @@ require("md_preview").setup({
   port = 9876,
   host = "127.0.0.1",
   auto_open = true,
+  browser_app = false,
   log_file = "",
 
   scroll_sync = true,

@@ -67,6 +67,22 @@ do
   check(#lines == 2 and lines[2] == "b" and rest == "c", "複数行の組み立てが違う: " .. vim.inspect(lines))
 end
 
+--- browser_app: --app で開くコマンド。無効なら今までどおり、ブラウザが無ければ通常の開き方に戻る
+do
+  local url = "http://127.0.0.1:9876/?instance=x&token=y"
+  local default_cmd = md._browser_cmd(url)
+  check(not vim.tbl_contains(default_cmd, "--app=" .. url), "browser_app = false で --app が付いている")
+  md.config.browser_app = true
+  md.config.export.browser_path = vim.v.progpath  -- 実行できるファイルならブラウザの代わりになる
+  local app = md._browser_cmd(url)
+  check(app[1] == vim.v.progpath and app[2] == "--app=" .. url and #app == 2,
+    "browser_app のコマンドが違う: " .. vim.inspect(app))
+  md.config.export.browser_path = "/nonexistent/browser"
+  check(vim.deep_equal(md._browser_cmd(url), default_cmd), "ブラウザが無いときに通常の開き方に戻らない")
+  md.config.browser_app = false
+  md.config.export.browser_path = ""
+end
+
 --- 結果
 if #failures > 0 then
   for _, msg in ipairs(failures) do
