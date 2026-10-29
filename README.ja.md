@@ -328,6 +328,7 @@ require("md_preview").setup({
 | `theme` | `"auto"` | `"auto"`（OS の設定に従う）、`"dark"`、`"light"`。プレビューのボタンで切り替えた場合は、そちらを記憶して優先します。 |
 | `custom_css` | `""` | 組み込みスタイルの後に読み込む CSS ファイルのパス。組み込みのスタイルを上書きできます。 |
 | `wiki_links` | `true` | `[[Page]]` と `[[Page\|表示名]]` を、Neovim で開けるリンクにします。 |
+| `task_toggle` | `true` | プレビューのタスクリストのチェックボックス（`- [ ]`）をクリックすると、Neovim のバッファの該当行を切り替えます（undo 1 回で戻せます）。プレビューがバッファより古いとき（入力の直後など）は書き換えず、もう一度試すよう表示します。LAN モードでは使えません。 |
 | `browser_keys` | `true` | プレビュー画面のキーボードショートカット（`t`、`/`、Ctrl+F、`p`）。Vimium などのブラウザ拡張とぶつかる場合は `false` にします（[FAQ](#faq) を参照）。 |
 
 ### Git の差分
@@ -392,6 +393,7 @@ require("md_preview").setup({
   theme = "auto",
   custom_css = "",
   wiki_links = true,
+  task_toggle = true,
   browser_keys = true,
 
   git_diff = true,

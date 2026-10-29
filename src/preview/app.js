@@ -235,6 +235,7 @@ async function renderContent(html) {
   }
 
   reconcile(contentEl, Array.from(tmp.children));
+  applyTaskToggle();
   skeleton.style.display = 'none';
   contentEl.style.display = '';
 
@@ -661,6 +662,42 @@ contentEl.addEventListener('click', e => {
   }
 });
 
+// ── チェックボックスの切り替え ────────────────────────────────
+// クリックしたら Neovim にその行の書き換えを頼む。表示は Neovim が書き換えた内容が届いてから変わる
+// （Neovim は、このページが表示している版 currentRev が最新のときだけ書き換える）
+let taskToggle = false;
+let currentRev = null;
+// タスクのチェックボックスが属する li（li の直下か、ゆるいリストの li > p の直下にあるもの）
+function taskItem(input) {
+  if (!(input instanceof HTMLInputElement) || input.type !== 'checkbox' || input.closest('.diff-ghost')) return null;
+  const li = input.closest('li');
+  if (!li || (input.parentElement !== li && input.parentElement?.parentElement !== li)) return null;
+  return li;
+}
+function taskInputs() {
+  return Array.from(contentEl.querySelectorAll('li input[type=checkbox]')).filter(taskItem);
+}
+function applyTaskToggle() {
+  const on = taskToggle && !PRINT;
+  for (const input of taskInputs()) {
+    input.disabled = !on;
+    input.title = on ? 'Toggle in Neovim' : '';
+  }
+}
+contentEl.addEventListener('change', e => {
+  const input = e.target;
+  const li = taskItem(input);
+  if (!li) return;
+  const checked = input.checked;
+  // 見た目はまだ変えない（断られたときに、表示とバッファがずれないように）
+  input.checked = !checked;
+  const marker = li.querySelector(':scope > .src-line, :scope > p > .src-line');
+  if (!taskToggle || !marker || !currentRev || !wsConn || wsConn.readyState !== WebSocket.OPEN) return;
+  wsConn.send(JSON.stringify({
+    type: 'toggle_task', line: +marker.dataset.line, checked, buf: currentRev.buf, tick: currentRev.tick,
+  }));
+});
+
 // ── WebSocket ─────────────────────────────────────────────────
 let wsConn = null;
 let rendering = false;
@@ -668,6 +705,7 @@ let pendingContent = null;
 
 // コンテンツ更新（Markdown は描画、それ以外はハイライトしたコード）
 async function showContent(data) {
+  currentRev = data.rev || null;
   document.title = data.title;
   titleEl.textContent = data.title;
   viewKind = data.kind === 'code' ? 'code' : 'markdown';
@@ -735,6 +773,8 @@ fetch('/settings').then(r => r.json()).then(cfg => {
   configuredTheme = cfg.theme || 'auto';
   if (resolveTheme() !== currentTheme) themeBtn.click();
   browserKeys = cfg.browser_keys !== false;
+  taskToggle = cfg.task_toggle === true;
+  applyTaskToggle();
   cursorHighlight = cfg.cursor_highlight !== false;
   highlightCursor();
   // export.formats に無い形式はメニューから外し、1 つも無ければ Export ボタンごと隠す
@@ -1284,6 +1324,8 @@ function showSlide(i) {
   slideIdx = Math.max(0, Math.min(slides.length - 1, i));
   slideBody.innerHTML = '';
   for (const n of slides[slideIdx]) slideBody.appendChild(n.cloneNode(true));
+  // スライドの中のチェックボックスは切り替えない
+  slideBody.querySelectorAll('input[type=checkbox]').forEach(i => { i.disabled = true; });
   slideBody.scrollTop = 0;
   $('slideNum').textContent = `${slideIdx + 1} / ${slides.length}`;
   $('slideProgress').firstElementChild.style.width = ((slideIdx + 1) / slides.length * 100) + '%';

@@ -6,6 +6,7 @@ All notable changes are documented here. This project follows [Semantic Versioni
 
 ### Added
 - `:MdPreviewInfo` shows the preview URL, the file, the Git diff base and which tools are used for PDF and PlantUML. `:MdPreviewInfo copy` copies the URL, which helps after closing the browser or on another device.
+- `task_toggle` option (on by default): clicking a task list checkbox in the preview toggles it in the Neovim buffer, as one undoable change. The preview sends back the buffer version it shows, and Neovim only changes the line when that version is current, so a click on an out-of-date preview never edits the wrong line. Disabled in LAN mode.
 - `cursor_highlight` option (on by default): the block under the Neovim cursor is outlined in the preview, and the line in code files. It also works with `scroll_sync = false`. Not shown when printing or in slides.
 - `log_file` option: appends start and stop, the port, the tools used, export results and errors from the binary to a file, for bug reports. Document contents are never written and the LAN token is masked.
 

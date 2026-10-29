@@ -35,6 +35,8 @@ pub struct AppState {
     pub custom_css: Arc<RwLock<String>>,
     /// ブラウザのキーボードショートカット（t / / / Ctrl+F / p）を使う
     pub browser_keys: Arc<RwLock<bool>>,
+    /// プレビューのチェックボックスをクリックで切り替える（LAN モードでは Neovim 側で false にして送る）
+    pub task_toggle: Arc<RwLock<bool>>,
     /// Neovim のカーソルがあるブロックをプレビューで強調する
     pub cursor_highlight: Arc<RwLock<bool>>,
     /// Export メニューに出す形式（export.formats）
@@ -122,6 +124,7 @@ impl AppState {
             theme: Arc::new(RwLock::new("auto".to_string())),
             custom_css: Arc::new(RwLock::new(String::new())),
             browser_keys: Arc::new(RwLock::new(true)),
+            task_toggle: Arc::new(RwLock::new(false)),
             cursor_highlight: Arc::new(RwLock::new(true)),
             export_formats: Arc::new(RwLock::new(
                 ["pdf", "docx", "html", "epub", "markdown"].iter().map(|s| s.to_string()).collect(),

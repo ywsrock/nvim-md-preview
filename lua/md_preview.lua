@@ -42,6 +42,9 @@ M.config = {
   -- プレビュー画面のキーボードショートカット（t: 目次 / "/" と Ctrl+F: 検索 / p: プレゼンモード）
   --   Vimium などブラウザの Vim 系拡張とキーがぶつかる場合は false にする（ボタンは使える）
   browser_keys = true,
+  -- プレビューのチェックボックス（- [ ] / - [x]）をクリックで切り替え、Neovim のバッファを書き換える。
+  --   プレビューが古いときは書き換えない。LAN モード（host が localhost 以外）では使えない
+  task_toggle = true,
   -- Neovim のカーソルがあるブロック（段落・見出し・リスト項目・コードの行など）をプレビューで枠で示す
   cursor_highlight = true,
   -- Git の差分をプレビューに表示する（:MdPreviewDiff で切り替え）。Git の管理外のファイルでは何もしない
@@ -181,8 +184,49 @@ local function send_update(buf)
   local title     = get_buf_title(buf)
   local base_dir  = get_buf_dir(buf)
   local file_path = vim.api.nvim_buf_get_name(buf)  -- フルパス（エクスポート用）
+  local tick      = vim.api.nvim_buf_get_changedtick(buf)
+  -- 送った版を覚えておく（チェックボックスの切り替えで、プレビューが最新かを確かめる）
+  state.sent = { buf = buf, tick = tick, content = content }
   pcall(vim.rpcnotify, state.chan_id, "md_preview_update", content, title, base_dir, file_path,
-    M._view_kind(buf), vim.bo[buf].filetype)
+    M._view_kind(buf), vim.bo[buf].filetype, buf, tick)
+end
+
+--- 最後にブラウザへ送った版の changedtick（テスト用）
+function M._sent_tick()
+  return state.sent and state.sent.tick or -1
+end
+
+--- プレビューのチェックボックスのクリック（バイナリから呼ばれる）
+--- line 行目のタスクを checked にする。ブラウザが表示している版（buf, tick）が、
+--- 最後に送った版で、かつ今のバッファと同じ内容のときだけ書き換える（古い表示で別の行を書き換えないため）
+function M._toggle_task(line, checked, buf, tick)
+  if not M.config.task_toggle or not M._is_loopback(M.config.host) then return end
+  local function refuse(msg)
+    vim.notify("[md-preview] " .. msg, vim.log.levels.WARN)
+    M._log("task toggle refused: %s", msg)
+  end
+  local sent = state.sent
+  if buf ~= state.buf_id or not vim.api.nvim_buf_is_valid(buf)
+    or not sent or sent.buf ~= buf or sent.tick ~= tick then
+    return refuse("The preview is out of date. Try again")
+  end
+  -- 保存（:w）でも changedtick は増えるので、番号が違っても内容が同じなら最新とみなす
+  if vim.api.nvim_buf_get_changedtick(buf) ~= tick and get_buf_content(buf) ~= sent.content then
+    return refuse("The preview is out of date. Try again")
+  end
+  if not vim.bo[buf].modifiable or vim.bo[buf].readonly then
+    return refuse("This buffer cannot be modified")
+  end
+  local text = vim.api.nvim_buf_get_lines(buf, line - 1, line, false)[1] or ""
+  -- "- [ ]" / "* [x]" / "1. [ ]"（引用の中の "> - [ ]" も）
+  local prefix = text:match("^[%s>]*[-*+]%s+%[") or text:match("^[%s>]*%d+[.)]%s+%[")
+  local mark = prefix and text:sub(#prefix + 1, #prefix + 1)
+  if not mark or not mark:match("^[ xX]$") or text:sub(#prefix + 2, #prefix + 2) ~= "]" then
+    return refuse(string.format("No task on line %d", line))
+  end
+  if (mark ~= " ") == checked then return end  -- 既にその状態
+  vim.api.nvim_buf_set_text(buf, line - 1, #prefix, line - 1, #prefix + 1, { checked and "x" or " " })
+  M._log("task toggled: line %d -> %s", line, checked and "done" or "open")
 end
 
 --- 比較の基準（git_diff_base）を git show に渡す形にする
@@ -442,6 +486,7 @@ local function send_export_config()
     custom_css = custom_css,
     wiki_links = M.config.wiki_links,
     browser_keys = M.config.browser_keys,
+    task_toggle = M.config.task_toggle and M._is_loopback(M.config.host),
     cursor_highlight = M.config.cursor_highlight,
     export_formats = M.config.export.formats,
     plantuml_path = M._find_plantuml() or "",
