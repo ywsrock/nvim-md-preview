@@ -83,6 +83,81 @@ do
   md.config.export.browser_path = ""
 end
 
+--- pandoc / Typst: 設定したパスや PATH にあればダウンロードしない（#44）
+do
+  local is_win = vim.fn.has("win32") == 1
+  local data = vim.fn.tempname()
+  vim.fn.mkdir(data, "p")
+  local orig_stdpath = vim.fn.stdpath
+  vim.fn.stdpath = function(what)  -- ダウンロード先を空の一時ディレクトリにする
+    if what == "data" then return data end
+    return orig_stdpath(what)
+  end
+  local bin = vim.fn.tempname()
+  vim.fn.mkdir(bin, "p")
+  local orig_path = vim.env.PATH
+  local function on_path(name)
+    local f = bin .. "/" .. name .. (is_win and ".bat" or "")
+    vim.fn.writefile(is_win and { "@echo off" } or { "#!/bin/sh" }, f)
+    if not is_win then vim.fn.setfperm(f, "rwxr-xr-x") end
+  end
+  local function find(items, label)
+    for _, it in ipairs(items) do
+      if it.label == label then return it end
+    end
+  end
+  local ex = md.config.export
+  ex.pdf_engine = "typst"
+
+  -- PATH に無ければダウンロードする
+  vim.env.PATH = bin
+  check(md._find_engine("pandoc", "") == nil, "PATH に無い pandoc が見つかった")
+  local items = md._install_items({})
+  check(find(items, "pandoc") and find(items, "pandoc").status == nil, "PATH に無い pandoc をダウンロードしない")
+
+  -- PATH にあればダウンロードしない。Typst のパッケージは入れる
+  on_path("pandoc")
+  on_path("typst")
+  local path, source = md._find_engine("pandoc", "")
+  check(source == "PATH" and path ~= "", "PATH 上の pandoc が見つからない: " .. tostring(source))
+  items = md._install_items({})
+  check(find(items, "pandoc").status == "skip" and find(items, "pandoc").found == path,
+    "PATH に pandoc があるのにダウンロードする: " .. vim.inspect(find(items, "pandoc")))
+  check(find(items, "typst").status == "skip", "PATH に typst があるのにダウンロードする")
+  check(find(items, "pkgs") and find(items, "pkgs").status == nil, "Typst のパッケージを入れない")
+
+  -- force（:MdPreviewInstall!）ならダウンロードする
+  items = md._install_items({ force = true })
+  check(find(items, "pandoc").status == nil, "force でも pandoc をダウンロードしない")
+
+  -- 設定したパスが最優先
+  ex.pandoc_path = "/opt/pandoc"
+  path, source = md._find_engine("pandoc", ex.pandoc_path)
+  check(source == "configured" and path == "/opt/pandoc", "設定したパスが優先されない")
+  check(find(md._install_items({}), "pandoc").status == "skip", "pandoc_path を設定してもダウンロードする")
+  ex.pandoc_path = ""
+
+  -- ダウンロードしたものがあれば、PATH より優先し、今までどおり更新する
+  local dl = data .. "/nvim-md-preview"
+  vim.fn.mkdir(dl, "p")
+  local auto = dl .. "/pandoc" .. (is_win and ".exe" or "")
+  vim.fn.writefile({ "#!/bin/sh" }, auto)
+  if not is_win then vim.fn.setfperm(auto, "rwxr-xr-x") end
+  if vim.fn.executable(auto) == 1 then
+    _, source = md._find_engine("pandoc", "")
+    check(source == "downloaded", "ダウンロードしたものが優先されない: " .. tostring(source))
+    check(find(md._install_items({}), "pandoc").status == nil, "ダウンロードしたものを更新しない")
+    check(find(md._install_items({ missing_only = true }), "pandoc").status == "done",
+      "missing_only でダウンロード済みのものをスキップしない")
+  end
+
+  vim.env.PATH = orig_path
+  vim.fn.stdpath = orig_stdpath
+  ex.pdf_engine = "browser"
+  vim.fn.delete(data, "rf")
+  vim.fn.delete(bin, "rf")
+end
+
 --- 結果
 if #failures > 0 then
   for _, msg in ipairs(failures) do

@@ -82,7 +82,10 @@ end, {
   complete = function() return { "copy" } end,
 })
 
-vim.api.nvim_create_user_command("MdPreviewInstall", function()
+vim.api.nvim_create_user_command("MdPreviewInstall", function(opts)
   local ok, m = pcall(require, "md_preview")
-  if ok then m.install() end
-end, { desc = "Download the nvim-md-preview binary, pandoc and Typst" })
+  if ok then m.install({ force = opts.bang }) end
+end, {
+  bang = true,
+  desc = "Download the nvim-md-preview binary, pandoc and Typst (! also when they are on PATH)",
+})

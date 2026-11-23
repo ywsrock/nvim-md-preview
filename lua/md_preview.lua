@@ -428,6 +428,26 @@ function M._pdf_engine()
   return engine
 end
 
+--- エクスポートエンジン（pandoc / typst）のパスを解決する
+---   1. configured（export.<name>_path）
+---   2. stdpath("data")/nvim-md-preview/<name>[.exe]（:MdPreviewInstall でダウンロードしたもの）
+---   3. PATH 上の <name>
+--- 戻り値: (path, source)。source は "configured" | "downloaded" | "PATH"。見つからなければ nil
+function M._find_engine(name, configured)
+  if configured ~= nil and configured ~= "" then
+    return configured, "configured"
+  end
+  local auto = vim.fn.stdpath("data") .. "/nvim-md-preview/" .. name
+    .. (vim.fn.has("win32") == 1 and ".exe" or "")
+  if vim.fn.executable(auto) == 1 then
+    return auto, "downloaded"
+  end
+  if vim.fn.executable(name) == 1 then
+    return vim.fn.exepath(name), "PATH"
+  end
+  return nil
+end
+
 --- エクスポートエンジンのパスを解決してバイナリに送る
 --- PlantUML を描くコマンド（plantuml_path、無ければ PATH 上の plantuml）。見つからなければ nil
 function M._find_plantuml()
@@ -449,27 +469,9 @@ local function send_export_config()
   if state.chan_id == nil then return end
 
   local install_dir = vim.fn.stdpath("data") .. "/nvim-md-preview"
-  local is_win = vim.fn.has("win32") == 1
 
-  local pandoc_path = M.config.export.pandoc_path
-  if pandoc_path == "" then
-    local auto = install_dir .. "/pandoc" .. (is_win and ".exe" or "")
-    if vim.fn.executable(auto) == 1 then
-      pandoc_path = auto
-    elseif vim.fn.executable("pandoc") == 1 then
-      pandoc_path = "pandoc"
-    end
-  end
-
-  local typst_path = M.config.export.typst_path
-  if typst_path == "" then
-    local auto = install_dir .. "/typst" .. (is_win and ".exe" or "")
-    if vim.fn.executable(auto) == 1 then
-      typst_path = auto
-    elseif vim.fn.executable("typst") == 1 then
-      typst_path = "typst"
-    end
-  end
+  local pandoc_path = M._find_engine("pandoc", M.config.export.pandoc_path) or ""
+  local typst_path = M._find_engine("typst", M.config.export.typst_path) or ""
 
   local ex = M.config.export
   local custom_css = ""
@@ -1181,6 +1183,8 @@ local function render_progress(items)
     local s
     if it.status == "done" then
       s = "done"
+    elseif it.status == "skip" then
+      s = "skipped"
     elseif it.status == "fail" then
       s = "FAILED"
     elseif it.status == "extract" then
@@ -1197,17 +1201,12 @@ local function render_progress(items)
   vim.api.nvim_echo({ { msg:sub(1, math.max(vim.v.echospace - 1, 1)) } }, false, {})
 end
 
---- GitHub Releases から OS に合わせたバイナリを並列ダウンロードする
---- lazy.nvim の build オプションや :MdPreviewInstall コマンドから呼ぶ
---- opts.missing_only: 既にあるものはスキップ / opts.on_done(ok): 完了時コールバック
---- UI が無い（headless）場合は完了まで待って ok を返す
-function M.install(opts)
+--- インストールする項目を決める（ダウンロードはしない）
+--- opts.missing_only: 既にあるものは status = "done"
+--- opts.force: pandoc / Typst が設定や PATH にあってもダウンロードする
+--- 戻り値: (items, install_dir, is_win)
+function M._install_items(opts)
   opts = opts or {}
-  if M._installing then
-    vim.notify("[md-preview] Installation already in progress", vim.log.levels.WARN)
-    return false
-  end
-
   local uname   = uv.os_uname()
   local sysname = uname.sysname  -- "Linux" / "Darwin" / "Windows_NT"
   local machine = uname.machine  -- "x86_64" / "arm64" / "aarch64"
@@ -1216,7 +1215,6 @@ function M.install(opts)
   local is_win = sysname:match("Windows") ~= nil or vim.fn.has("win32") == 1
   local ext    = is_win and ".exe" or ""
   local install_dir = vim.fn.stdpath("data") .. "/nvim-md-preview"
-  vim.fn.mkdir(install_dir, "p")
 
   local target, plat
   if sysname == "Linux" then
@@ -1234,15 +1232,27 @@ function M.install(opts)
     { label = "core", name = "nvim-md-preview", asset = "nvim-md-preview-" .. target .. ext,
       dest = install_dir .. "/nvim-md-preview" .. ext },
   }
+  -- pandoc / Typst は、ダウンロードしたものが無く、設定したパスか PATH にあればダウンロードしない（#44）。
+  -- 使う側（send_export_config）も同じ順序で探すので、そちらがそのまま使われる。
+  -- ダウンロードしたものがあるときは、今までどおり更新する
+  local function engine(label, name, cfg_path)
+    local item = { label = label, name = name, asset = label .. "-" .. plat .. ext,
+      dest = install_dir .. "/" .. label .. ext, archive = true }
+    if not opts.force then
+      local path, source = M._find_engine(label, cfg_path)
+      if source == "configured" or source == "PATH" then
+        item.status, item.found = "skip", path
+      end
+    end
+    return item
+  end
   if cfg.docx_engine == "pandoc" then
-    items[#items + 1] = { label = "pandoc", name = "pandoc", asset = "pandoc-" .. plat .. ext,
-      dest = install_dir .. "/pandoc" .. ext, archive = true }
+    items[#items + 1] = engine("pandoc", "pandoc", cfg.pandoc_path)
   end
   -- Typst は PDF を Typst で作るとき（"browser" でブラウザが無いときも）だけ入れる。
-  -- パッケージ（cmarker）も一緒に入れて、PDF を作るときにネットワークへ取りに行かないようにする
+  -- パッケージ（cmarker）は Typst がどこにあっても入れて、PDF を作るときにネットワークへ取りに行かないようにする
   if cfg.pdf_engine == "typst" or (cfg.pdf_engine == "browser" and not M._find_browser()) then
-    items[#items + 1] = { label = "typst", name = "Typst", asset = "typst-" .. plat .. ext,
-      dest = install_dir .. "/typst" .. ext, archive = true }
+    items[#items + 1] = engine("typst", "Typst", cfg.typst_path)
     items[#items + 1] = { label = "pkgs", name = "Typst packages", asset = "typst-packages",
       dest = install_dir .. "/typst-packages", archive = true, dir = true }
   end
@@ -1250,8 +1260,25 @@ function M.install(opts)
     -- .tar.gz のアセット名には .exe を付けない（pandoc-windows.tar.gz）
     if it.archive then it.asset = it.asset:gsub("%.exe$", "") end
     local present = it.dir and vim.fn.isdirectory(it.dest) == 1 or vim.fn.executable(it.dest) == 1
-    if opts.missing_only and present then it.status = "done" end
+    if opts.missing_only and present and it.status == nil then it.status = "done" end
   end
+  return items, install_dir, is_win
+end
+
+--- GitHub Releases から OS に合わせたバイナリを並列ダウンロードする
+--- lazy.nvim の build オプションや :MdPreviewInstall コマンドから呼ぶ
+--- opts.missing_only: 既にあるものはスキップ / opts.force: PATH にある pandoc・Typst もダウンロードする
+--- opts.on_done(ok): 完了時コールバック
+--- UI が無い（headless）場合は完了まで待って ok を返す
+function M.install(opts)
+  opts = opts or {}
+  if M._installing then
+    vim.notify("[md-preview] Installation already in progress", vim.log.levels.WARN)
+    return false
+  end
+
+  local items, install_dir, is_win = M._install_items(opts)
+  vim.fn.mkdir(install_dir, "p")
 
   M._installing = true
   local timer = uv.new_timer()
@@ -1268,6 +1295,9 @@ function M.install(opts)
     for _, it in ipairs(items) do
       if it.status == "done" then
         lines[#lines + 1] = "OK      " .. it.name .. ": " .. it.dest
+      elseif it.status == "skip" then
+        lines[#lines + 1] = "SKIPPED " .. it.name .. ": using " .. it.found
+          .. " (:MdPreviewInstall! downloads it anyway)"
       else
         lines[#lines + 1] = "FAILED  " .. it.name .. ": " .. (it.err or "unknown error")
           .. "\n   URL: " .. (it.url or (release_bases()[1] .. it.asset))
@@ -1288,15 +1318,16 @@ function M.install(opts)
     if opts.on_done then opts.on_done(result) end
   end
 
+  local function waiting(it) return it.status ~= "done" and it.status ~= "skip" end
   local pending = 0
   for _, it in ipairs(items) do
-    if it.status ~= "done" then pending = pending + 1 end
+    if waiting(it) then pending = pending + 1 end
   end
   if pending == 0 then
     on_all_done()
   else
     for _, it in ipairs(items) do
-      if it.status ~= "done" then
+      if waiting(it) then
         install_item(it, install_dir, is_win, function()
           pending = pending - 1
           if pending == 0 then on_all_done() end

@@ -79,9 +79,12 @@ tools and how the browser is opened.
     header shows the number of changes with buttons to jump between them,
     and markers beside the scrollbar show where they are.
 
-:MdPreviewInstall                                        *:MdPreviewInstall*
+:MdPreviewInstall[!]                                     *:MdPreviewInstall*
     Download the preview binary, pandoc and Typst in parallel. Progress is
-    shown on the command line and a summary is shown when done.
+    shown on the command line and a summary is shown when done. pandoc and
+    Typst are skipped when they are on PATH or set with `pandoc_path` /
+    `typst_path` and no downloaded copy exists. With [!], they are
+    downloaded anyway.
 
 :MdPreviewInfo [copy]                                      *:MdPreviewInfo*
     Show the preview URL, the file being previewed, the Git diff base, and
@@ -221,7 +224,7 @@ it again to print.
 6. EXPORT                                                *md-preview-export*
 
 PDF uses Typst, DOCX / HTML / EPUB use pandoc. Both are downloaded by
-|:MdPreviewInstall|. Options under `export`:
+|:MdPreviewInstall| unless they are already on PATH. Options under `export`:
 
     formats         `{ "pdf", "slides", "docx", "html", "epub", "markdown" }`. Formats
                     offered in the preview's Export menu and in
@@ -278,6 +281,8 @@ a loopback name and any cross-origin request or WebSocket.
     require("md_preview").toggle_diff({base}) Same as |:MdPreviewDiff|.
     require("md_preview").install({opts})     Same as |:MdPreviewInstall|.
         {opts}.missing_only  download only files that are missing
+        {opts}.force         download pandoc and Typst even when they
+                             are on PATH (same as `:MdPreviewInstall!`)
         {opts}.on_done       function(ok) called when finished
 
 ==============================================================================

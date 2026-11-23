@@ -15,7 +15,6 @@ local h = {
 }
 
 local is_win = vim.fn.has("win32") == 1
-local exe    = is_win and ".exe" or ""
 
 --- コマンドを実行して標準出力の 1 行目を返す（失敗時は nil）
 local function first_line(cmd)
@@ -35,23 +34,9 @@ local function detect_wsl()
   return content:find("microsoft") ~= nil or content:find("wsl") ~= nil
 end
 
---- エクスポートエンジンのパスを解決する（lua/md_preview.lua の send_export_config と同じ順序）
----   1. config.export.<name>_path
----   2. stdpath("data")/nvim-md-preview/<name>[.exe]
----   3. PATH 上の <name>
---- 戻り値: (path, source) / 見つからなければ nil
+--- エクスポートエンジンのパスを解決する（lua/md_preview.lua の M._find_engine と同じもの）
 local function resolve_engine(name, configured)
-  if configured ~= nil and configured ~= "" then
-    return configured, "configured"
-  end
-  local auto = vim.fn.stdpath("data") .. "/nvim-md-preview/" .. name .. exe
-  if vim.fn.executable(auto) == 1 then
-    return auto, "downloaded"
-  end
-  if vim.fn.executable(name) == 1 then
-    return vim.fn.exepath(name), "PATH"
-  end
-  return nil
+  return require("md_preview")._find_engine(name, configured)
 end
 
 --- Neovim バージョン
