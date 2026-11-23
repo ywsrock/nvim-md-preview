@@ -2,7 +2,7 @@
 
 All notable changes are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.10.0] - 2026-11-23
 
 ### Changed
 - `:MdPreviewInstall` no longer downloads pandoc (about 180 MB) or Typst when they are already on your `PATH` or set with `export.pandoc_path` / `export.typst_path`, and the summary says which one is used. A copy downloaded earlier is still updated. `:MdPreviewInstall!` (or `install({ force = true })`) downloads them anyway. (#44)
