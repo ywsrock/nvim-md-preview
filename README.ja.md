@@ -55,7 +55,7 @@ use { "ywsrock/nvim-md-preview", run = ":MdPreviewInstall" }
 
 </details>
 
-`:MdPreviewInstall` は、プラグインと同じ版のバイナリと、エクスポート用の pandoc・Typst を並列でダウンロードし、進捗をコマンドラインに表示します。`build` の設定をせずにプラグインを更新した場合は、バイナリが古いとプレビューの開始時に警告が出るので、もう一度 `:MdPreviewInstall` を実行してください。うまく動かないときは `:checkhealth md_preview` を実行してください。
+`:MdPreviewInstall` は、プラグインと同じ版のバイナリと、エクスポート用の pandoc・Typst を並列でダウンロードし、進捗をコマンドラインに表示します。pandoc・Typst は、すでに `PATH` にあるか `export.pandoc_path` / `export.typst_path` で設定していればダウンロードしません（`:MdPreviewInstall!` なら必ずダウンロードします）。`build` の設定をせずにプラグインを更新した場合は、バイナリが古いとプレビューの開始時に警告が出るので、もう一度 `:MdPreviewInstall` を実行してください。うまく動かないときは `:checkhealth md_preview` を実行してください。
 
 ## 他のプラグインとの比較
 
@@ -287,7 +287,7 @@ require("md_preview").setup({
 | `:MdPreviewExport {形式} [path]` | バッファを出力：`pdf` `slides`（1 枚 1 ページの PDF） `docx` `html` `epub` `markdown`。`path` を省略するとファイルの隣に保存 |
 | `:MdPreviewDiff [基準]` | Git の差分の表示を切り替え。`基準`（`HEAD`、`staged`、ブランチ・タグ・コミット）を指定するとそれと比較。`off` で非表示 |
 | `:MdPreviewInfo [copy]` | プレビューの URL、対象のファイル、PDF と PlantUML に使うものを表示。`copy` で URL をコピー |
-| `:MdPreviewInstall` | バイナリ・pandoc・Typst をダウンロード / 更新 |
+| `:MdPreviewInstall[!]` | バイナリ・pandoc・Typst をダウンロード / 更新。`PATH` にある pandoc・Typst はダウンロードせずにそれを使う。`!` なら必ずダウンロード |
 
 プレビューでは、`t` で目次、`/` か Ctrl+F で検索、`p` でスライド、クリックで該当行へ移動します。ツールバーのボタンでも同じ操作ができます。これらのキーが Vimium などのブラウザ拡張とぶつかる場合は `browser_keys = false` にしてください（[FAQ](#faq) を参照）。
 
@@ -354,7 +354,7 @@ require("md_preview").setup({
 | `formats` | `{ "pdf", "slides", "docx", "html", "epub", "markdown" }` | プレビューの Export メニューと `:MdPreviewExport` の補完に出す形式。`{}` にすると Export ボタンを隠します。 |
 | `pdf_engine` | `"browser"` | PDF の作り方。`"browser"` は Chrome・Edge・Brave・Chromium でプレビューを印刷するので、プレビューと同じ見た目になります。これらが無ければ Typst を使います。`"typst"` は常に Typst を使います（`template` に対応。図・数式・callout は描画されません）。 |
 | `browser_path` | `""` | PDF の作成に使うブラウザ。空なら、Chrome・Edge・Brave・Chromium を標準の場所と `PATH` から探します。 |
-| `docx_engine` | `"pandoc"` | `"pandoc"` なら `:MdPreviewInstall` で DOCX・HTML・EPUB 用の pandoc をダウンロードします。それ以外の値ではダウンロードしません。 |
+| `docx_engine` | `"pandoc"` | `"pandoc"` なら `:MdPreviewInstall` で DOCX・HTML・EPUB 用の pandoc をダウンロードします（`PATH` にあるか `pandoc_path` を設定していればダウンロードしません）。それ以外の値ではダウンロードしません。 |
 | `pandoc_path` | `""` | pandoc のパス。空ならダウンロードしたもの、次に `PATH` 上の `pandoc` を使います。 |
 | `typst_path` | `""` | Typst のパス。空ならダウンロードしたもの、次に `PATH` 上の `typst` を使います。 |
 | `paper` | `"a4"` | PDF の用紙サイズ。`"us-letter"` や `"a5"` など、Typst の用紙名を指定します。 |

@@ -55,7 +55,7 @@ use { "ywsrock/nvim-md-preview", run = ":MdPreviewInstall" }
 
 </details>
 
-`:MdPreviewInstall` downloads the binary that matches the plugin version (plus pandoc and Typst for export) in parallel with progress on the command line. If you update the plugin without a `build` hook, the preview warns when the binary is out of date; run `:MdPreviewInstall` again. Something wrong? Run `:checkhealth md_preview`.
+`:MdPreviewInstall` downloads the binary that matches the plugin version (plus pandoc and Typst for export) in parallel with progress on the command line. pandoc and Typst are skipped when they are already on your `PATH` or set with `export.pandoc_path` / `export.typst_path`; `:MdPreviewInstall!` downloads them anyway. If you update the plugin without a `build` hook, the preview warns when the binary is out of date; run `:MdPreviewInstall` again. Something wrong? Run `:checkhealth md_preview`.
 
 ## How it compares
 
@@ -287,7 +287,7 @@ Set `host = "0.0.0.0"`. Each time the preview starts, Neovim shows LAN URLs with
 | `:MdPreviewExport {format} [path]` | Export the buffer: `pdf`, `slides` (PDF, one slide per page), `docx`, `html`, `epub`, `markdown`. Saved next to the file unless `path` is given |
 | `:MdPreviewDiff [base]` | Toggle the Git diff, or compare with `base` (`HEAD`, `staged`, a branch, tag or commit). `off` hides it |
 | `:MdPreviewInfo [copy]` | Show the preview URL, the file, and which PDF and PlantUML tools are used. `copy` copies the URL |
-| `:MdPreviewInstall` | Download or update the binary, pandoc and Typst |
+| `:MdPreviewInstall[!]` | Download or update the binary, pandoc and Typst. pandoc and Typst already on your `PATH` are used instead; with `!` they are downloaded anyway |
 
 In the preview: `t` table of contents, `/` or Ctrl+F search, `p` slides, click to jump. The toolbar buttons do the same. If these keys clash with a browser extension such as Vimium, set `browser_keys = false` (see [FAQ](#faq)).
 
@@ -354,7 +354,7 @@ require("md_preview").setup({
 | `formats` | `{ "pdf", "slides", "docx", "html", "epub", "markdown" }` | Formats offered in the preview's Export menu and in `:MdPreviewExport` completion. `{}` hides the Export button. |
 | `pdf_engine` | `"browser"` | How PDFs are made. `"browser"` prints the preview with Chrome, Edge, Brave or Chromium, so the PDF looks like the preview; without one of them, Typst is used. `"typst"` always uses Typst (supports `template`, but not Mermaid, math or callouts). |
 | `browser_path` | `""` | Browser used for PDFs. Empty looks for Chrome, Edge, Brave and Chromium in their usual places and on your `PATH`. |
-| `docx_engine` | `"pandoc"` | `"pandoc"` makes `:MdPreviewInstall` download pandoc for DOCX, HTML and EPUB. Any other value skips it. |
+| `docx_engine` | `"pandoc"` | `"pandoc"` makes `:MdPreviewInstall` download pandoc for DOCX, HTML and EPUB, unless pandoc is already on your `PATH` or set in `pandoc_path`. Any other value skips it. |
 | `pandoc_path` | `""` | Path to pandoc. Empty uses the downloaded copy, then `pandoc` on your `PATH`. |
 | `typst_path` | `""` | Path to Typst. Empty uses the downloaded copy, then `typst` on your `PATH`. |
 | `paper` | `"a4"` | PDF paper size. Any Typst paper name, such as `"us-letter"` or `"a5"`. |
