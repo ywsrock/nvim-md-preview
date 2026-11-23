@@ -130,11 +130,15 @@ do
   items = md._install_items({ force = true })
   check(find(items, "pandoc").status == nil, "force でも pandoc をダウンロードしない")
 
-  -- 設定したパスが最優先
-  ex.pandoc_path = "/opt/pandoc"
+  -- 設定したパスが最優先。実行できればダウンロードしない
+  local configured = bin .. "/pandoc" .. (is_win and ".bat" or "")
+  ex.pandoc_path = configured
   path, source = md._find_engine("pandoc", ex.pandoc_path)
-  check(source == "configured" and path == "/opt/pandoc", "設定したパスが優先されない")
+  check(source == "configured" and path == configured, "設定したパスが優先されない")
   check(find(md._install_items({}), "pandoc").status == "skip", "pandoc_path を設定してもダウンロードする")
+  -- 設定したパスが実行できなければ、今までどおりダウンロードする
+  ex.pandoc_path = "/nonexistent/pandoc"
+  check(find(md._install_items({}), "pandoc").status == nil, "実行できない pandoc_path でダウンロードしない")
   ex.pandoc_path = ""
 
   -- ダウンロードしたものがあれば、PATH より優先し、今までどおり更新する
@@ -147,6 +151,9 @@ do
     _, source = md._find_engine("pandoc", "")
     check(source == "downloaded", "ダウンロードしたものが優先されない: " .. tostring(source))
     check(find(md._install_items({}), "pandoc").status == nil, "ダウンロードしたものを更新しない")
+    ex.pandoc_path = configured  -- 設定していても、ダウンロードしたものがあれば今までどおり更新する
+    check(find(md._install_items({}), "pandoc").status == nil, "pandoc_path があるとダウンロードしたものを更新しない")
+    ex.pandoc_path = ""
     check(find(md._install_items({ missing_only = true }), "pandoc").status == "done",
       "missing_only でダウンロード済みのものをスキップしない")
   end

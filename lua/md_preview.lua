@@ -470,8 +470,14 @@ local function send_export_config()
 
   local install_dir = vim.fn.stdpath("data") .. "/nvim-md-preview"
 
-  local pandoc_path = M._find_engine("pandoc", M.config.export.pandoc_path) or ""
-  local typst_path = M._find_engine("typst", M.config.export.typst_path) or ""
+  -- PATH 上のものは名前だけを送る（バイナリ側で PATH から探す。以前と同じ値）
+  local function engine_path(name, configured)
+    local path, source = M._find_engine(name, configured)
+    if source == "PATH" then return name end
+    return path or ""
+  end
+  local pandoc_path = engine_path("pandoc", M.config.export.pandoc_path)
+  local typst_path = engine_path("typst", M.config.export.typst_path)
 
   local ex = M.config.export
   local custom_css = ""
@@ -1232,16 +1238,16 @@ function M._install_items(opts)
     { label = "core", name = "nvim-md-preview", asset = "nvim-md-preview-" .. target .. ext,
       dest = install_dir .. "/nvim-md-preview" .. ext },
   }
-  -- pandoc / Typst は、ダウンロードしたものが無く、設定したパスか PATH にあればダウンロードしない（#44）。
-  -- 使う側（send_export_config）も同じ順序で探すので、そちらがそのまま使われる。
-  -- ダウンロードしたものがあるときは、今までどおり更新する
+  -- pandoc / Typst は、ダウンロードしたものが無く、実行できるものが設定したパスか PATH にあれば
+  -- ダウンロードしない（#44）。使う側（send_export_config）も同じ順序で探すので、そちらがそのまま使われる。
+  -- ダウンロードしたものがあるとき・設定したパスが実行できないときは、今までどおりダウンロードする
   local function engine(label, name, cfg_path)
     local item = { label = label, name = name, asset = label .. "-" .. plat .. ext,
       dest = install_dir .. "/" .. label .. ext, archive = true }
-    if not opts.force then
+    if not opts.force and vim.fn.executable(item.dest) == 0 then
       local path, source = M._find_engine(label, cfg_path)
-      if source == "configured" or source == "PATH" then
-        item.status, item.found = "skip", path
+      if (source == "configured" or source == "PATH") and vim.fn.executable(path) == 1 then
+        item.status, item.found = "skip", vim.fn.exepath(path)
       end
     end
     return item
